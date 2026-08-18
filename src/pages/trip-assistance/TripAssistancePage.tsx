@@ -1,0 +1,660 @@
+// ============================================================
+// WAYTERO ADMIN — TRIP ASSISTANCE PAGE
+// Route: /trip-assistance
+// Purpose: Admin console to help drivers who cannot self-manage trips.
+//   - Shows active trips (DRIVER_ASSIGNED, STARTED) in a table
+//   - Lookup modal: enter booking number → get full trip details
+//   - Action panel: Start Trip → Close Trip → Collect Payment
+//                    → Generate Invoice → Settle
+// ============================================================
+import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Box, Stack, Typography, Button, TextField,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
+  Paper, Chip, IconButton, Tooltip, alpha, useTheme,
+  CircularProgress, Snackbar, Alert, InputAdornment,
+  Divider, Badge,
+} from "@mui/material";
+import {
+  DirectionsRun, Search, Refresh, PlayCircle, StopCircle,
+  Payments, Receipt, TaskAlt, Close as CloseIcon, Info, OpenInNew,
+  AccessTime, Speed, Person, Handshake, MonetizationOn,
+} from "@mui/icons-material";
+
+import { tripAssistanceService, TripDetail, ActiveTripsResponse } from "../../services/tripAssistance.service";
+
+// Modals
+import StartTripModal      from "./components/StartTripModal";
+import CloseTripModal      from "./components/CloseTripModal";
+import CollectPaymentModal from "./components/CollectPaymentModal";
+import InvoiceModal        from "./components/InvoiceModal";
+import TripDetailCard      from "./components/TripDetailCard";
+// SettleModal removed — settlement handled exclusively on Settlements page
+
+// ── Types ─────────────────────────────────────────────────────
+type ModalType = "start" | "close" | "payment" | "invoice" | null;
+
+interface SnackState { open: boolean; msg: string; sev: "success" | "error" }
+
+// ── Status badge config ──────────────────────────────────────
+const STATUS_COLORS: Record<string, "default" | "warning" | "info" | "success" | "error"> = {
+  DRIVER_ASSIGNED: "info",
+  STARTED:         "warning",
+  COMPLETED:       "success",
+  SETTLEMENT_PENDING: "warning",
+  SETTLED:         "success",
+  BREAKDOWN_REPORTED: "error",
+  AWAITING_SWAP:   "warning",
+  CANCELLED:       "error",
+};
+
+// Extra label override for display in the table
+const STATUS_LABELS: Record<string, string> = {
+  DRIVER_ASSIGNED: "Driver Assigned",
+  STARTED:         "Trip Started",
+  COMPLETED:       "Cash Pending",   // only shown when cash_pending_at === DRIVER
+  SETTLEMENT_PENDING: "Settlement Pending",
+  SETTLED:         "Settled",
+  BREAKDOWN_REPORTED: "Vehicle Breakdown",
+  AWAITING_SWAP:   "Awaiting Replacement",
+  CANCELLED:       "Cancelled",
+};
+
+// ── Which actions are available per status ────────────────────
+function getAvailableActions(status: string, paymentMode?: string | null, detail?: any) {
+  const isCompleted   = status === "COMPLETED";
+  const hasPayment    = !!paymentMode; // payment_mode set = payment was recorded (CASH/WALLET/ONLINE)
+
+  // cash_pending_at=DRIVER means the driver collected CASH — payment IS recorded.
+  // It only means the cash hasn't been handed to the partner yet (a settlement concern).
+  // Admin should NOT see "Collect Payment" active in this state.
+  const paymentNotYetRecorded = !hasPayment;
+
+  const hasInvoice = !!detail?.invoice_number;
+  const inInvoicableStatus = ["COMPLETED", "SETTLEMENT_PENDING", "SETTLED"].includes(status);
+
+  return {
+    canStart:   status === "DRIVER_ASSIGNED",
+    canClose:   status === "STARTED",
+    // Collect Payment: only when trip is COMPLETED but payment_mode is still null
+    canPayment: isCompleted && paymentNotYetRecorded,
+    // Download Invoice: payment recorded + in a terminal status
+    // hasInvoice guard removed — InvoiceModal will auto-generate if missing (older bookings)
+    canInvoice: hasPayment && inInvoicableStatus,
+    // No canSettle — settlement handled exclusively on Settlements page
+  };
+}
+
+// ── Lookup Panel ─────────────────────────────────────────────
+function LookupPanel({
+  onFound, loading, error,
+}: {
+  onFound: (d: TripDetail) => void;
+  loading: boolean;
+  error: string;
+}) {
+  const theme = useTheme();
+  const [bn, setBn] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr]  = useState("");
+
+  async function handleLookup() {
+    const num = bn.trim().toUpperCase();
+    if (!num) { setErr("Enter a booking number."); return; }
+    setBusy(true); setErr("");
+    try {
+      const detail = await tripAssistanceService.lookup(num);
+      onFound(detail);
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail ?? "Booking not found.");
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <Box
+      sx={{
+        p: 2.5, borderRadius: 3,
+        bgcolor: "background.paper",
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.15)}`,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.04)} 0%, ${alpha(theme.palette.background.paper, 1)} 100%)`,
+      }}
+    >
+      <Typography variant="overline" color="primary.main" fontWeight={800} sx={{ letterSpacing: 1.5 }}>
+        Booking Lookup
+      </Typography>
+      <Stack direction="row" spacing={1.5} mt={1} alignItems="flex-start">
+        <TextField
+          size="small"
+          placeholder="e.g. WT-CAB-202600001"
+          value={bn}
+          onChange={e => { setBn(e.target.value.toUpperCase()); setErr(""); }}
+          onKeyDown={e => e.key === "Enter" && handleLookup()}
+          fullWidth
+          error={!!err}
+          helperText={err || "Enter the cab booking number"}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search sx={{ fontSize: 18, color: "text.secondary" }} />
+              </InputAdornment>
+            ),
+          }}
+          sx={{ maxWidth: 340 }}
+        />
+        <Button
+          variant="contained"
+          onClick={handleLookup}
+          disabled={busy}
+          startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <Search fontSize="small" />}
+          sx={{ fontWeight: 700, height: 38, whiteSpace: "nowrap" }}
+        >
+          {busy ? "Looking…" : "Look Up"}
+        </Button>
+      </Stack>
+    </Box>
+  );
+}
+
+// ── Action Toolbar ────────────────────────────────────────────
+function ActionToolbar({
+  detail,
+  onAction,
+}: {
+  detail: TripDetail;
+  onAction: (modal: ModalType) => void;
+}) {
+  const theme = useTheme();
+  const { canStart, canClose, canPayment, canInvoice } = getAvailableActions(detail.cab_status, detail.payment_mode, detail);
+
+  const actions = [
+    { key: "start",   label: "Start Trip",      icon: <PlayCircle />,   color: "success" as const, enabled: canStart,   tooltip: "Start trip on behalf of driver" },
+    { key: "close",   label: "Close Trip",      icon: <StopCircle />,   color: "error"   as const, enabled: canClose,   tooltip: "Close trip and record final amount" },
+    { key: "payment", label: "Collect Payment", icon: <Payments />,     color: "primary" as const, enabled: canPayment, tooltip: canPayment ? "Record cash or wallet payment on driver's behalf" : "Payment already recorded" },
+    { key: "invoice", label: "Download Invoice",icon: <Receipt />,      color: "warning" as const, enabled: canInvoice, tooltip: canInvoice ? "Download PDF invoice for this trip" : "Collect payment first — invoice is auto-generated" },
+  ];
+
+  return (
+    <Box
+      sx={{
+        p: 2, borderRadius: 2,
+        bgcolor: alpha(theme.palette.primary.main, 0.04),
+        border: `1px solid ${alpha(theme.palette.divider, 0.6)}`,
+      }}
+    >
+      <Typography variant="overline" color="text.secondary" fontWeight={800} sx={{ letterSpacing: 1.5, display: "block", mb: 1.5 }}>
+        Actions — {detail.cab_booking_number}
+      </Typography>
+      <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
+        {actions.map(a => (
+          <Tooltip key={a.key} title={a.enabled ? a.tooltip : "Not available in current status"} arrow>
+            <span>
+              <Button
+                variant={a.enabled ? "contained" : "outlined"}
+                color={a.color}
+                size="small"
+                startIcon={a.icon}
+                disabled={!a.enabled}
+                onClick={() => onAction(a.key as ModalType)}
+                sx={{
+                  fontWeight: 700, opacity: a.enabled ? 1 : 0.45,
+                  transition: "all 0.2s",
+                }}
+              >
+                {a.label}
+              </Button>
+            </span>
+          </Tooltip>
+        ))}
+      </Stack>
+    </Box>
+  );
+}
+
+// ── Active Trips Table ────────────────────────────────────────
+function ActiveTripsTable({
+  data,
+  loading,
+  onSelect,
+}: {
+  data: ActiveTripsResponse | null;
+  loading: boolean;
+  onSelect: (d: TripDetail) => void;
+}) {
+  const theme = useTheme();
+
+  return (
+    <Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+        <Typography variant="subtitle1" fontWeight={800}>
+          Trips Requiring Assistance
+          {data && (
+            <Badge
+              badgeContent={data.total}
+              color="primary"
+              sx={{ ml: 1.5, "& .MuiBadge-badge": { fontWeight: 700, fontSize: "0.65rem" } }}
+            />
+          )}
+        </Typography>
+      </Stack>
+
+      <TableContainer component={Paper} sx={{ borderRadius: 2, border: `1px solid ${alpha(theme.palette.divider, 0.5)}` }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}>
+              {["Cab Booking", "Status", "Customer", "Driver", "Partner", "Pickup", "Vehicle", ""].map(h => (
+                <TableCell key={h} sx={{ fontWeight: 800, fontSize: "0.72rem", letterSpacing: 0.5, py: 1.5, color: "text.secondary" }}>
+                  {h}
+                </TableCell>
+              ))}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {loading && (
+              <TableRow>
+                <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
+                  <CircularProgress size={28} />
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && (!data || data.items.length === 0) && (
+              <TableRow>
+                <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
+                  <Stack alignItems="center" spacing={1}>
+                    <DirectionsRun sx={{ fontSize: 36, color: "text.disabled" }} />
+                    <Typography variant="body2" color="text.secondary">No trips requiring assistance</Typography>
+                    <Typography variant="caption" color="text.disabled">Active trips, started trips, and cash-pending bookings will appear here</Typography>
+                  </Stack>
+                </TableCell>
+              </TableRow>
+            )}
+            {!loading && data?.items.map(row => {
+              const sc = STATUS_COLORS[row.cab_status] ?? "default";
+              return (
+                <TableRow
+                  key={row.cab_booking_id}
+                  hover
+                  sx={{ cursor: "pointer", "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.04) } }}
+                  onClick={() => onSelect(row)}
+                >
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={700} color="primary.main">{row.cab_booking_number}</Typography>
+                    <Typography variant="caption" color="text.secondary">{row.booking_number}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack spacing={0.5}>
+                      <Chip
+                        label={
+                          row.cab_status === "COMPLETED" && !row.payment_mode
+                            ? "Payment Pending"
+                            : row.cab_status === "COMPLETED" && row.cash_pending_at === "DRIVER"
+                            ? "Cash Pending"
+                            : (STATUS_LABELS[row.cab_status] ?? row.cab_status.replace(/_/g, " "))
+                        }
+                        color={
+                          row.cab_status === "COMPLETED" && !row.payment_mode
+                            ? "error"
+                            : row.cab_status === "COMPLETED" && row.cash_pending_at === "DRIVER"
+                            ? "warning"
+                            : sc
+                        }
+                        size="small"
+                        icon={
+                          (row.cab_status === "COMPLETED" && (!row.payment_mode || row.cash_pending_at === "DRIVER"))
+                            ? <MonetizationOn sx={{ fontSize: "14px !important" }} />
+                            : undefined
+                        }
+                        sx={{ fontWeight: 700, fontSize: "0.68rem" }}
+                      />
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={600}>{row.customer_name ?? "—"}</Typography>
+                    <Typography variant="caption" color="text.secondary">{row.customer_mobile ?? ""}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Person sx={{ fontSize: 14, color: "text.secondary" }} />
+                      <Typography variant="body2">{row.driver_name ?? <em style={{ color: "#999" }}>Unassigned</em>}</Typography>
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary">{row.driver_mobile ?? ""}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Handshake sx={{ fontSize: 14, color: "text.secondary" }} />
+                      <Typography variant="body2">{row.partner_name ?? "—"}</Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <AccessTime sx={{ fontSize: 14, color: "text.secondary" }} />
+                      <Typography variant="body2">
+                        {row.pickup_datetime ? new Date(row.pickup_datetime).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" }) : "—"}
+                      </Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Speed sx={{ fontSize: 14, color: "text.secondary" }} />
+                      <Typography variant="body2">{row.vehicle_reg ?? "—"}</Typography>
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="primary"
+                      sx={{ fontWeight: 700, fontSize: "0.7rem" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect(row);
+                      }}
+                    >
+                      Assist
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    </Box>
+  );
+}
+
+
+
+// ── Settlement Guide Banner ───────────────────────────────────
+function SettlementGuideBanner({ navigate }: { navigate: (to: string) => void }) {
+  const theme = useTheme();
+  return (
+    <Box
+      sx={{
+        p: 2, borderRadius: 2,
+        background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.08)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+        border: `1px solid ${alpha(theme.palette.success.main, 0.3)}`,
+        display: "flex", alignItems: "center", gap: 2,
+      }}
+    >
+      <TaskAlt sx={{ color: "success.main", fontSize: 28, flexShrink: 0 }} />
+      <Box flex={1}>
+        <Typography variant="body2" fontWeight={700} color="success.dark">
+          Payment Recorded — Proceed to Settlements
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+          This booking is ready to be settled. Settlement (commission deduction & partner payout) is managed
+          from the <strong>Settlements</strong> page after invoice is generated.
+        </Typography>
+      </Box>
+      <Button
+        size="small"
+        variant="contained"
+        color="success"
+        endIcon={<OpenInNew fontSize="small" />}
+        onClick={() => navigate("/settlements")}
+        sx={{ fontWeight: 700, whiteSpace: "nowrap" }}
+      >
+        Go to Settlements
+      </Button>
+    </Box>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ════════════════════════════════════════════════════════════════
+export default function TripAssistancePage() {
+  const theme = useTheme();
+  const navigate = useNavigate();
+
+  // Active trips list
+  const [activeTrips, setActiveTrips] = useState<ActiveTripsResponse | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+
+  // Currently assisted booking (from lookup OR row click)
+  const [selectedTrip, setSelectedTrip] = useState<TripDetail | null>(null);
+
+  // Active modal
+  const [activeModal, setActiveModal] = useState<ModalType>(null);
+
+  // Snackbar
+  const [snack, setSnack] = useState<SnackState>({ open: false, msg: "", sev: "success" });
+  const showSnack = (msg: string, sev: "success" | "error" = "success") => setSnack({ open: true, msg, sev });
+
+  // ── Load active trips ────────────────────────────────────────
+  const loadActive = useCallback(async () => {
+    setListLoading(true);
+    try {
+      const data = await tripAssistanceService.listActive(1, 50);
+      setActiveTrips(data);
+    } catch {}
+    finally { setListLoading(false); }
+  }, []);
+
+  useEffect(() => { loadActive(); }, [loadActive]);
+
+  // ── After any action success: refresh detail + list ──────────
+  async function handleActionSuccess(msg: string) {
+    showSnack(msg);
+    await loadActive();
+    // Re-fetch the selected trip to refresh status
+    if (selectedTrip) {
+      try {
+        const refreshed = await tripAssistanceService.lookup(selectedTrip.cab_booking_number);
+        setSelectedTrip(refreshed);
+      } catch {}
+    }
+  }
+
+  // ── Lookup found ─────────────────────────────────────────────
+  function handleFound(detail: TripDetail) {
+    setSelectedTrip(detail);
+    // Scroll to detail section
+    setTimeout(() => {
+      document.getElementById("trip-detail-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  }
+
+  return (
+    <Box sx={{ p: { xs: 2, md: 3 } }}>
+      {/* Page Header */}
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" mb={3}>
+        <Box>
+          <Stack direction="row" spacing={1.5} alignItems="center" mb={0.5}>
+            <Box
+              sx={{
+                width: 40, height: 40, borderRadius: 2,
+                background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >
+              <DirectionsRun sx={{ color: "#fff", fontSize: 22 }} />
+            </Box>
+            <Typography variant="h5" fontWeight={800} color="text.primary">Trip Assistance</Typography>
+          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            Admin console to help drivers start, close, and settle trips remotely.
+          </Typography>
+        </Box>
+        <Tooltip title="Refresh active trips">
+          <IconButton onClick={loadActive} disabled={listLoading} size="small" sx={{ mt: 0.5 }}>
+            <Refresh sx={{ fontSize: 20 }} />
+          </IconButton>
+        </Tooltip>
+      </Stack>
+
+      <Stack spacing={3}>
+
+        {/* Lookup Panel */}
+        <LookupPanel onFound={handleFound} loading={false} error="" />
+
+        {/* Selected Trip Detail */}
+        {selectedTrip && (
+          <Box id="trip-detail-section">
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+              <Typography variant="subtitle1" fontWeight={800}>Trip Console</Typography>
+              <IconButton
+                size="small"
+                onClick={() => setSelectedTrip(null)}
+                sx={{ color: "text.secondary" }}
+              >
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Stack>
+
+            <Stack spacing={2}>
+              {/* Action toolbar */}
+              <ActionToolbar
+                detail={selectedTrip}
+                onAction={setActiveModal}
+              />
+
+              {/* Settlement Guide Banner — visible after payment collected */}
+              {(selectedTrip.cab_status === "COMPLETED" || selectedTrip.cab_status === "SETTLEMENT_PENDING") && selectedTrip.payment_mode && (
+                <SettlementGuideBanner navigate={navigate} />
+              )}
+
+              {/* Status Progress Steps */}
+              <TripStatusStepper status={selectedTrip.cab_status} />
+
+              {/* Full detail card */}
+              <TripDetailCard detail={selectedTrip} />
+            </Stack>
+          </Box>
+        )}
+
+        <Divider />
+
+        {/* Active Trips Table */}
+        <ActiveTripsTable
+          data={activeTrips}
+          loading={listLoading}
+          onSelect={detail => { setSelectedTrip(detail); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+        />
+
+      </Stack>
+
+      {/* ── Modals ─────────────────────────────────────────────── */}
+      {selectedTrip && (
+        <>
+          <StartTripModal
+            open={activeModal === "start"}
+            bookingNumber={selectedTrip.cab_booking_number}
+            onClose={() => setActiveModal(null)}
+            onSuccess={() => handleActionSuccess("Trip started successfully!")}
+          />
+          <CloseTripModal
+            open={activeModal === "close"}
+            detail={selectedTrip}
+            onClose={() => setActiveModal(null)}
+            onSuccess={() => handleActionSuccess("Trip closed successfully!")}
+          />
+          <CollectPaymentModal
+            open={activeModal === "payment"}
+            detail={selectedTrip}
+            onClose={() => setActiveModal(null)}
+            onSuccess={() => handleActionSuccess("Payment recorded successfully!")}
+          />
+          <InvoiceModal
+            open={activeModal === "invoice"}
+            detail={selectedTrip}
+            onClose={() => setActiveModal(null)}
+            onSuccess={() => handleActionSuccess("Invoice generated!")}
+          />
+        </>
+      )}
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snack.open}
+        autoHideDuration={4000}
+        onClose={() => setSnack(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+      >
+        <Alert severity={snack.sev} onClose={() => setSnack(s => ({ ...s, open: false }))} sx={{ fontWeight: 600 }}>
+          {snack.msg}
+        </Alert>
+      </Snackbar>
+    </Box>
+  );
+}
+
+
+// ── Trip Status Stepper ───────────────────────────────────────
+const STEPS = [
+  { status: "DRIVER_ASSIGNED", label: "Driver Assigned",    color: "#2196f3" },
+  { status: "STARTED",         label: "Trip Started",       color: "#ff9800" },
+  { status: "COMPLETED",       label: "Trip Completed",     color: "#4caf50" },
+  { status: "SETTLED",         label: "Settled & Closed",   color: "#9c27b0" },
+];
+
+function TripStatusStepper({ status }: { status: string }) {
+  const theme = useTheme();
+
+  const currentIdx = STEPS.findIndex(s => s.status === status);
+  // Special: SETTLEMENT_PENDING is between COMPLETED and SETTLED
+  const effectiveIdx = status === "SETTLEMENT_PENDING" ? 2.5 : currentIdx;
+
+  return (
+    <Box
+      sx={{
+        p: 2, borderRadius: 2,
+        bgcolor: "background.paper",
+        border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+      }}
+    >
+      <Typography variant="overline" color="text.secondary" fontWeight={700} sx={{ letterSpacing: 1.5, display: "block", mb: 1.5 }}>
+        Trip Progress
+      </Typography>
+      <Stack direction="row" spacing={0} alignItems="center">
+        {STEPS.map((step, idx) => {
+          const done    = idx < (effectiveIdx === 2.5 ? 3 : effectiveIdx);
+          const active  = Math.floor(effectiveIdx) === idx;
+          const future  = idx > Math.floor(effectiveIdx);
+
+          return (
+            <Box key={step.status} sx={{ display: "flex", alignItems: "center", flex: idx < STEPS.length - 1 ? 1 : "none" }}>
+              {/* Step circle */}
+              <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", minWidth: 72 }}>
+                <Box sx={{
+                  width: 32, height: 32, borderRadius: "50%",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  bgcolor: done || active ? step.color : alpha(theme.palette.grey[400], 0.25),
+                  border: active ? `3px solid ${step.color}` : "2px solid transparent",
+                  boxShadow: active ? `0 0 0 4px ${alpha(step.color, 0.15)}` : "none",
+                  transition: "all 0.3s",
+                }}>
+                  {done ? (
+                    <TaskAlt sx={{ fontSize: 16, color: "#fff" }} />
+                  ) : active ? (
+                    <Box sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: "#fff" }} />
+                  ) : (
+                    <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: alpha(theme.palette.grey[400], 0.6) }} />
+                  )}
+                </Box>
+                <Typography
+                  variant="caption"
+                  fontWeight={active || done ? 700 : 400}
+                  color={done || active ? "text.primary" : "text.disabled"}
+                  sx={{ mt: 0.5, fontSize: "0.65rem", textAlign: "center", lineHeight: 1.2 }}
+                >
+                  {step.label}
+                </Typography>
+              </Box>
+              {/* Connector line */}
+              {idx < STEPS.length - 1 && (
+                <Box sx={{
+                  flex: 1, height: 2, mx: 0.5,
+                  bgcolor: done ? alpha(STEPS[idx].color, 0.5) : alpha(theme.palette.grey[300], 0.6),
+                  borderRadius: 1, mb: 2.5,
+                  transition: "all 0.3s",
+                }} />
+              )}
+            </Box>
+          );
+        })}
+      </Stack>
+    </Box>
+  );
+}

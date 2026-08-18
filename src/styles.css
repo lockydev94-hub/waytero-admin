@@ -1,0 +1,41 @@
+:root {
+  color-scheme: light;
+  --bg: #f4efe7;
+  --fg: #1d2a39;
+  --accent: #0d7c66;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: radial-gradient(circle at top left, #fff7ed, var(--bg));
+  color: var(--fg);
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+}
+
+.hero {
+  max-width: 42rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(29, 42, 57, 0.08);
+  border-radius: 24px;
+  padding: 2rem;
+  box-shadow: 0 24px 60px rgba(29, 42, 57, 0.08);
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+

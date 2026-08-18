@@ -1,0 +1,1467 @@
+// ============================================================
+// WAYTERO ADMIN — SETTINGS PAGE (Full Implementation)
+// Tabs: Platform | System Config | API Integrations |
+//       App Versions | Commission | Pricing | Notifications
+// Doc Ref: Admin API §25 | DB Schema Part 1 §12-14 | Part 2 §14-15
+// ============================================================
+import { useState, useEffect, useCallback } from "react";
+import {
+  Box, Typography, Card, CardContent, CardHeader, Tabs, Tab,
+  Table, TableHead, TableRow, TableCell, TableBody, TableContainer,
+  Paper, IconButton, Chip, Button, Dialog, DialogTitle, DialogContent,
+  DialogActions, TextField, Switch, FormControlLabel, Select, MenuItem,
+  InputLabel, FormControl, Tooltip, CircularProgress, Alert, Divider,
+  Stack, Grid, InputAdornment, Collapse,
+} from "@mui/material";
+import {
+  Edit, Delete, Add, Save, Refresh, Settings, CloudUpload,
+  Notifications, PriceChange, Groups, PhoneAndroid,
+  TuneOutlined, KeyboardArrowDown, KeyboardArrowUp, CheckCircle,
+  ErrorOutline, Public, Link,
+} from "@mui/icons-material";
+import { useSnackbar } from "notistack";
+import { settingsService, SystemConfig, ApiIntegration, CommissionGroup, AppVersion, NotificationTemplate } from "../../services/settings.service";
+
+// ── helpers ─────────────────────────────────────────────────────────────────
+
+function safeParseJSON(str: string): Record<string, string> {
+  try { return JSON.parse(str) ?? {}; } catch { return {}; }
+}
+
+function TabPanel({ children, value, index }: { children: React.ReactNode; value: number; index: number }) {
+  return value === index ? <Box sx={{ pt: 3 }}>{children}</Box> : null;
+}
+
+const SECTION_GROUPS: Record<string, string[]> = {
+  "Platform Details": ["PLATFORM_NAME", "PLATFORM_TAGLINE", "PLATFORM_COUNTRY", "SUPPORT_EMAIL", "SUPPORT_PHONE"],
+  "Timezone & Currency": ["PLATFORM_TIMEZONE", "PLATFORM_CURRENCY", "PLATFORM_CURRENCY_SYMBOL", "PLATFORM_LOCALE"],
+  "Booking & Cancellation": ["BOOKING_CANCELLATION_HOURS", "GST_PERCENTAGE", "PLATFORM_COMMISSION_PERCENTAGE"],
+  "Auth & Security": ["OTP_EXPIRY_MINUTES", "MAX_LOGIN_ATTEMPTS", "WALLET_MINIMUM_BALANCE"],
+};
+
+const INTEGRATION_FIELDS: Record<string, string[]> = {
+  CLOUDINARY: ["cloud_name", "api_key", "api_secret", "upload_preset"],
+  FIREBASE: ["project_id", "private_key_id", "private_key", "client_email", "web_api_key", "storage_bucket"],
+  GOOGLE_MAPS: ["api_key", "map_id"],
+  RAZORPAY: ["key_id", "key_secret", "webhook_secret"],
+  MSG91: ["auth_key", "sender_id", "route"],
+  WHATSAPP: ["api_key", "phone_number_id", "business_account_id"],
+  FCM: ["server_key", "sender_id"],
+  MINIO: ["endpoint", "access_key", "secret_key", "bucket"],
+  SMTP: ["host", "port", "username", "password", "from_email"],
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+export default function SettingsPage() {
+  const [tab, setTab] = useState(0);
+  const { enqueueSnackbar } = useSnackbar();
+
+  return (
+    <Box>
+      {/* Header */}
+      <Box sx={{ mb: 3, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Box>
+          <Typography variant="h5" fontWeight={700}>Settings</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Platform configuration, integrations & operational rules
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Tabs */}
+      <Paper sx={{ mb: 3, borderRadius: 2 }}>
+        <Tabs
+          value={tab}
+          onChange={(_, v) => setTab(v)}
+          variant="scrollable"
+          scrollButtons="auto"
+          sx={{ borderBottom: 1, borderColor: "divider", px: 2 }}
+        >
+          <Tab icon={<Public sx={{ fontSize: 16 }} />} iconPosition="start" label="Platform" />
+          <Tab icon={<TuneOutlined sx={{ fontSize: 16 }} />} iconPosition="start" label="System Config" />
+          <Tab icon={<Link sx={{ fontSize: 16 }} />} iconPosition="start" label="API Integrations" />
+          <Tab icon={<PhoneAndroid sx={{ fontSize: 16 }} />} iconPosition="start" label="App Versions" />
+          <Tab icon={<Groups sx={{ fontSize: 16 }} />} iconPosition="start" label="Commission" />
+          <Tab icon={<PriceChange sx={{ fontSize: 16 }} />} iconPosition="start" label="Pricing Rules" />
+          <Tab icon={<Notifications sx={{ fontSize: 16 }} />} iconPosition="start" label="Notifications" />
+        </Tabs>
+      </Paper>
+
+      <TabPanel value={tab} index={0}><PlatformTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={1}><SystemConfigTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={2}><ApiIntegrationsTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={3}><AppVersionsTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={4}><CommissionTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={5}><PricingTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={6}><NotificationTemplatesTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+    </Box>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 0 — PLATFORM DETAILS (grouped system configs)
+// ══════════════════════════════════════════════════════════════
+
+function PlatformTab({ enqueueSnackbar }: any) {
+  const [configs, setConfigs] = useState<SystemConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await settingsService.getConfigurations();
+      setConfigs(data);
+      const map: Record<string, string> = {};
+      data.forEach(c => { map[c.config_key] = c.config_value ?? ""; });
+      setEdits(map);
+    } catch { enqueueSnackbar("Failed to load platform settings", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (key: string) => {
+    setSaving(key);
+    try {
+      await settingsService.upsertConfiguration(key, edits[key] ?? "");
+      enqueueSnackbar(`Saved ${key}`, { variant: "success" });
+    } catch { enqueueSnackbar(`Failed to save ${key}`, { variant: "error" }); }
+    finally { setSaving(null); }
+  };
+
+  if (loading) return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
+
+  const platformKeys = Object.values(SECTION_GROUPS).flat();
+  const configMap: Record<string, SystemConfig> = {};
+  configs.forEach(c => { configMap[c.config_key] = c; });
+
+  return (
+    <Grid container spacing={3}>
+      {Object.entries(SECTION_GROUPS).map(([section, keys]) => (
+        <Grid item xs={12} md={6} key={section}>
+          <Card variant="outlined" sx={{ borderRadius: 2 }}>
+            <CardHeader
+              title={<Typography variant="subtitle1" fontWeight={700}>{section}</Typography>}
+              sx={{ pb: 0 }}
+            />
+            <CardContent>
+              <Stack spacing={2}>
+                {keys.map(key => (
+                  <Box key={key}>
+                    <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
+                      {configMap[key]?.description || key}
+                    </Typography>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={edits[key] ?? ""}
+                        onChange={e => setEdits(p => ({ ...p, [key]: e.target.value }))}
+                        placeholder={key}
+                        sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5 } }}
+                      />
+                      <Tooltip title="Save">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() => save(key)}
+                            disabled={saving === key}
+                            sx={{ flexShrink: 0 }}
+                          >
+                            {saving === key ? <CircularProgress size={16} /> : <Save fontSize="small" />}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    </Stack>
+                  </Box>
+                ))}
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+      ))}
+    </Grid>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 1 — SYSTEM CONFIG (all key-value, inline edit)
+// ══════════════════════════════════════════════════════════════
+
+function SystemConfigTab({ enqueueSnackbar }: any) {
+  const [configs, setConfigs] = useState<SystemConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [edits, setEdits] = useState<Record<string, string>>({});
+  const [addKey, setAddKey] = useState("");
+  const [addVal, setAddVal] = useState("");
+  const [addDesc, setAddDesc] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await settingsService.getConfigurations();
+      setConfigs(data);
+      const map: Record<string, string> = {};
+      data.forEach(c => { map[c.config_key] = c.config_value ?? ""; });
+      setEdits(map);
+    } catch { enqueueSnackbar("Failed to load configurations", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (key: string, desc?: string) => {
+    setSaving(key);
+    try {
+      await settingsService.upsertConfiguration(key, edits[key] ?? "", desc);
+      enqueueSnackbar(`Saved ${key}`, { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Save failed", { variant: "error" }); }
+    finally { setSaving(null); }
+  };
+
+  const del = async (key: string) => {
+    try {
+      await settingsService.deleteConfiguration(key);
+      enqueueSnackbar(`Deleted ${key}`, { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  const addNew = async () => {
+    if (!addKey.trim()) return;
+    await save(addKey.trim());
+    setAddKey(""); setAddVal(""); setAddDesc("");
+  };
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2 }}>
+      <CardHeader
+        title={<Typography fontWeight={700}>All System Configurations</Typography>}
+        action={
+          <Tooltip title="Refresh">
+            <IconButton onClick={load}><Refresh /></IconButton>
+          </Tooltip>
+        }
+      />
+      <CardContent>
+        {/* Add new */}
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: "action.hover" }}>
+          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1, display: "block" }}>
+            ADD NEW KEY
+          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
+            <TextField size="small" label="Key" value={addKey} onChange={e => setAddKey(e.target.value)} sx={{ flex: 1 }} />
+            <TextField size="small" label="Value" value={addVal}
+              onChange={e => { setAddVal(e.target.value); setEdits(p => ({ ...p, [addKey]: e.target.value })); }} sx={{ flex: 1 }} />
+            <TextField size="small" label="Description" value={addDesc} onChange={e => setAddDesc(e.target.value)} sx={{ flex: 2 }} />
+            <Button variant="contained" startIcon={<Add />} onClick={addNew} sx={{ flexShrink: 0 }}>Add</Button>
+          </Stack>
+        </Paper>
+
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: "action.hover" } }}>
+                  <TableCell>Key</TableCell>
+                  <TableCell>Value</TableCell>
+                  <TableCell>Description</TableCell>
+                  <TableCell>Updated</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {configs.map(cfg => (
+                  <TableRow key={cfg.config_key} hover>
+                    <TableCell>
+                      <Typography variant="caption" fontFamily="monospace" fontWeight={600} color="primary.main">
+                        {cfg.config_key}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        value={edits[cfg.config_key] ?? ""}
+                        onChange={e => setEdits(p => ({ ...p, [cfg.config_key]: e.target.value }))}
+                        sx={{ minWidth: 150 }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">{cfg.description}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(cfg.updated_at).toLocaleDateString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                        <Tooltip title="Save">
+                          <span>
+                            <IconButton size="small" color="primary" onClick={() => save(cfg.config_key, cfg.description ?? undefined)} disabled={saving === cfg.config_key}>
+                              {saving === cfg.config_key ? <CircularProgress size={14} /> : <Save fontSize="small" />}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="Delete">
+                          <IconButton size="small" color="error" onClick={() => del(cfg.config_key)}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 2 — API INTEGRATIONS (Cloudinary, Firebase, Google Maps…)
+// ══════════════════════════════════════════════════════════════
+
+function ApiIntegrationsTab({ enqueueSnackbar }: any) {
+  const [integrations, setIntegrations] = useState<ApiIntegration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [editMap, setEditMap] = useState<Record<number, Record<string, string>>>({});
+  const [saving, setSaving] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [newType, setNewType] = useState("CLOUDINARY");
+  const [newName, setNewName] = useState("Cloudinary");
+  const [newConfig, setNewConfig] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await (settingsService as any).getApiIntegrations();
+      setIntegrations(data);
+      const map: Record<number, Record<string, string>> = {};
+      data.forEach((ai: ApiIntegration) => { map[ai.id] = ai.configuration ?? {}; });
+      setEditMap(map);
+    } catch { enqueueSnackbar("Failed to load integrations", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (ai: ApiIntegration) => {
+    setSaving(ai.id);
+    try {
+      await (settingsService as any).updateApiIntegration(ai.id, {
+        configuration: editMap[ai.id] ?? {},
+        is_active: ai.is_active,
+      });
+      enqueueSnackbar(`${ai.service_name} saved`, { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Save failed", { variant: "error" }); }
+    finally { setSaving(null); }
+  };
+
+  const toggleActive = async (ai: ApiIntegration) => {
+    try {
+      await (settingsService as any).updateApiIntegration(ai.id, { is_active: !ai.is_active });
+      enqueueSnackbar(`${ai.service_name} ${!ai.is_active ? "enabled" : "disabled"}`, { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Update failed", { variant: "error" }); }
+  };
+
+  const del = async (id: number) => {
+    try {
+      await (settingsService as any).deleteApiIntegration(id);
+      enqueueSnackbar("Deleted", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  const addNew = async () => {
+    try {
+      await (settingsService as any).createApiIntegration({
+        service_name: newName,
+        service_type: newType,
+        configuration: newConfig,
+        is_active: false,
+      });
+      enqueueSnackbar(`${newName} added`, { variant: "success" });
+      setAddOpen(false);
+      setNewConfig({});
+      load();
+    } catch { enqueueSnackbar("Add failed", { variant: "error" }); }
+  };
+
+  const SERVICE_ICONS: Record<string, string> = {
+    CLOUDINARY: "☁️", FIREBASE: "🔥", GOOGLE_MAPS: "🗺️",
+    RAZORPAY: "💳", MSG91: "📱", WHATSAPP: "💬", FCM: "📲", MINIO: "🗄️", SMTP: "📧",
+  };
+
+  if (loading) return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
+
+  return (
+    <>
+      <Stack direction="row" justifyContent="flex-end" mb={2}>
+        <Button variant="contained" startIcon={<Add />} onClick={() => setAddOpen(true)}>
+          Add Integration
+        </Button>
+      </Stack>
+
+      <Stack spacing={2}>
+        {integrations.map(ai => {
+          const fields = INTEGRATION_FIELDS[ai.service_type] ?? Object.keys(ai.configuration ?? {});
+          const isExpanded = expanded === ai.id;
+          return (
+            <Card key={ai.id} variant="outlined" sx={{ borderRadius: 2 }}>
+              <CardContent sx={{ pb: "12px !important" }}>
+                <Stack direction="row" alignItems="center" spacing={2}>
+                  <Typography fontSize={24}>{SERVICE_ICONS[ai.service_type] ?? "🔌"}</Typography>
+                  <Box flex={1}>
+                    <Typography fontWeight={700}>{ai.service_name}</Typography>
+                    <Typography variant="caption" color="text.secondary" fontFamily="monospace">
+                      {ai.service_type}
+                    </Typography>
+                  </Box>
+                  <Chip
+                    label={ai.is_active ? "Active" : "Inactive"}
+                    color={ai.is_active ? "success" : "default"}
+                    size="small"
+                    onClick={() => toggleActive(ai)}
+                    clickable
+                  />
+                  <Tooltip title={isExpanded ? "Collapse" : "Configure"}>
+                    <IconButton size="small" onClick={() => setExpanded(isExpanded ? null : ai.id)}>
+                      {isExpanded ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete">
+                    <IconButton size="small" color="error" onClick={() => del(ai.id)}>
+                      <Delete fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+
+                <Collapse in={isExpanded}>
+                  <Divider sx={{ my: 2 }} />
+                  <Grid container spacing={2}>
+                    {fields.map(field => (
+                      <Grid item xs={12} sm={6} key={field}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label={field.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                          value={editMap[ai.id]?.[field] ?? ""}
+                          onChange={e => setEditMap(p => ({
+                            ...p,
+                            [ai.id]: { ...p[ai.id], [field]: e.target.value }
+                          }))}
+                          type={field.toLowerCase().includes("secret") || field.toLowerCase().includes("key") || field.toLowerCase().includes("password") ? "password" : "text"}
+                          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 1.5 } }}
+                        />
+                      </Grid>
+                    ))}
+                  </Grid>
+                  <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+                    <Button
+                      variant="contained"
+                      startIcon={saving === ai.id ? <CircularProgress size={14} color="inherit" /> : <Save />}
+                      onClick={() => save(ai)}
+                      disabled={saving === ai.id}
+                    >
+                      Save Configuration
+                    </Button>
+                  </Box>
+                </Collapse>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </Stack>
+
+      {/* Add dialog */}
+      <Dialog open={addOpen} onClose={() => setAddOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add API Integration</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Stack spacing={2}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Service Type</InputLabel>
+              <Select
+                value={newType}
+                label="Service Type"
+                onChange={e => {
+                  setNewType(e.target.value);
+                  setNewName(e.target.value.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()));
+                  const fields = INTEGRATION_FIELDS[e.target.value] ?? [];
+                  const cfg: Record<string, string> = {};
+                  fields.forEach(f => { cfg[f] = ""; });
+                  setNewConfig(cfg);
+                }}
+              >
+                {Object.keys(INTEGRATION_FIELDS).map(t => (
+                  <MenuItem key={t} value={t}>{t}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField size="small" fullWidth label="Display Name" value={newName} onChange={e => setNewName(e.target.value)} />
+            {(INTEGRATION_FIELDS[newType] ?? []).map(field => (
+              <TextField
+                key={field}
+                size="small"
+                fullWidth
+                label={field.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                value={newConfig[field] ?? ""}
+                onChange={e => setNewConfig(p => ({ ...p, [field]: e.target.value }))}
+              />
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={addNew}>Add</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 3 — APP VERSIONS
+// ══════════════════════════════════════════════════════════════
+
+function AppVersionsTab({ enqueueSnackbar }: any) {
+  const [versions, setVersions] = useState<AppVersion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ platform: "ANDROID", version: "", is_force_update: false, release_notes: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setVersions(await settingsService.getAppVersions()); }
+    catch { enqueueSnackbar("Failed to load app versions", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    try {
+      await settingsService.createAppVersion(form);
+      enqueueSnackbar("App version created", { variant: "success" });
+      setDialogOpen(false);
+      setForm({ platform: "ANDROID", version: "", is_force_update: false, release_notes: "" });
+      load();
+    } catch { enqueueSnackbar("Failed to create version", { variant: "error" }); }
+  };
+
+  const del = async (id: number) => {
+    try {
+      await settingsService.deleteAppVersion(id);
+      enqueueSnackbar("Deleted", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2 }}>
+      <CardHeader
+        title={<Typography fontWeight={700}>App Versions</Typography>}
+        action={
+          <Stack direction="row" spacing={1}>
+            <IconButton onClick={load}><Refresh /></IconButton>
+            <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)}>Add Version</Button>
+          </Stack>
+        }
+      />
+      <CardContent>
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: "action.hover" } }}>
+                  <TableCell>Platform</TableCell>
+                  <TableCell>Version</TableCell>
+                  <TableCell>Force Update</TableCell>
+                  <TableCell>Release Notes</TableCell>
+                  <TableCell>Created</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {versions.map(v => (
+                  <TableRow key={v.id} hover>
+                    <TableCell>
+                      <Chip
+                        label={v.platform}
+                        size="small"
+                        color={v.platform === "ANDROID" ? "success" : "primary"}
+                        variant="outlined"
+                      />
+                    </TableCell>
+                    <TableCell><Typography fontWeight={600}>{v.version}</Typography></TableCell>
+                    <TableCell>
+                      <Chip
+                        label={v.is_force_update ? "Force Update" : "Optional"}
+                        size="small"
+                        color={v.is_force_update ? "error" : "default"}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 200, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.release_notes}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(v.created_at).toLocaleDateString()}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" color="error" onClick={() => del(v.id)}>
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add App Version</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Platform</InputLabel>
+              <Select value={form.platform} label="Platform" onChange={e => setForm(p => ({ ...p, platform: e.target.value }))}>
+                <MenuItem value="ANDROID">Android</MenuItem>
+                <MenuItem value="IOS">iOS</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField size="small" fullWidth label="Version (e.g. 1.2.3)" value={form.version} onChange={e => setForm(p => ({ ...p, version: e.target.value }))} />
+            <TextField size="small" fullWidth multiline rows={3} label="Release Notes" value={form.release_notes} onChange={e => setForm(p => ({ ...p, release_notes: e.target.value }))} />
+            <FormControlLabel
+              control={<Switch checked={form.is_force_update} onChange={e => setForm(p => ({ ...p, is_force_update: e.target.checked }))} />}
+              label="Force Update"
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={save}>Create</Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 4 — COMMISSION GROUPS  (full CRUD: groups + rules)
+// Doc Ref: DB Schema Part 2 §14-15 | BRD §138-140
+// service_type: CAB | HOTEL | TOUR
+// commission_type: PERCENTAGE | FLAT
+// ══════════════════════════════════════════════════════════════
+
+const SERVICE_TYPE_COLOR: Record<string, "primary" | "warning" | "secondary"> = {
+  CAB: "primary", HOTEL: "warning", TOUR: "secondary",
+};
+const SERVICE_TYPE_ICON: Record<string, string> = { CAB: "🚕", HOTEL: "🏨", TOUR: "🗺️" };
+
+// ── Add Rule Dialog ───────────────────────────────────────────
+function AddRuleDialog({
+  open, groupId, onClose, onSaved, enqueueSnackbar,
+}: { open: boolean; groupId: number; onClose: () => void; onSaved: () => void; enqueueSnackbar: any }) {
+  const EMPTY = { service_type: "CAB", commission_type: "PERCENTAGE", commission_value: "", city_id: "", effective_from: "", effective_to: "", is_active: true };
+  const [form, setForm] = useState({ ...EMPTY });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!form.commission_value) return;
+    setSaving(true);
+    try {
+      await settingsService.addCommissionRule(groupId, {
+        service_type: form.service_type,
+        commission_type: form.commission_type as any,
+        commission_value: Number(form.commission_value),
+        city_id: form.city_id ? Number(form.city_id) : undefined,
+        effective_from: form.effective_from || undefined,
+        effective_to: form.effective_to || undefined,
+        is_active: form.is_active,
+      });
+      enqueueSnackbar("Rule added", { variant: "success" });
+      setForm({ ...EMPTY });
+      onSaved();
+    } catch { enqueueSnackbar("Failed to add rule", { variant: "error" }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Typography fontWeight={700} fontSize={18}>Add Commission Rule</Typography>
+        <Typography variant="caption" color="text.secondary">Define rate for a service type within this group</Typography>
+      </DialogTitle>
+      <DialogContent>
+        <Grid container spacing={2} sx={{ pt: 1 }}>
+          <Grid item xs={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Service Type</InputLabel>
+              <Select value={form.service_type} label="Service Type" onChange={e => setForm(p => ({ ...p, service_type: e.target.value }))}>
+                {["CAB", "HOTEL", "TOUR"].map(s => (
+                  <MenuItem key={s} value={s}>{SERVICE_TYPE_ICON[s]} {s}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Commission Type</InputLabel>
+              <Select value={form.commission_type} label="Commission Type" onChange={e => setForm(p => ({ ...p, commission_type: e.target.value }))}>
+                <MenuItem value="PERCENTAGE">Percentage (%)</MenuItem>
+                <MenuItem value="FLAT">Flat (₹)</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={6}>
+            <TextField
+              fullWidth size="small" required
+              label={form.commission_type === "PERCENTAGE" ? "Commission (%)" : "Commission (₹)"}
+              type="number" inputProps={{ min: 0, step: "0.01" }}
+              value={form.commission_value}
+              onChange={e => setForm(p => ({ ...p, commission_value: e.target.value }))}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    {form.commission_type === "PERCENTAGE" ? "%" : "₹"}
+                  </InputAdornment>
+                )
+              }}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <TextField
+              fullWidth size="small"
+              label="City ID (blank = all cities)"
+              type="number" inputProps={{ min: 1 }}
+              value={form.city_id}
+              onChange={e => setForm(p => ({ ...p, city_id: e.target.value }))}
+              helperText="Leave blank to apply to all cities"
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <TextField
+              fullWidth size="small" type="date" label="Effective From"
+              InputLabelProps={{ shrink: true }}
+              value={form.effective_from}
+              onChange={e => setForm(p => ({ ...p, effective_from: e.target.value }))}
+            />
+          </Grid>
+          <Grid item xs={6}>
+            <TextField
+              fullWidth size="small" type="date" label="Effective To"
+              InputLabelProps={{ shrink: true }}
+              value={form.effective_to}
+              onChange={e => setForm(p => ({ ...p, effective_to: e.target.value }))}
+            />
+          </Grid>
+          <Grid item xs={12}>
+            <FormControlLabel
+              control={<Switch checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} color="success" />}
+              label="Active immediately"
+            />
+          </Grid>
+        </Grid>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button
+          variant="contained" onClick={save} disabled={saving || !form.commission_value}
+          startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <Add />}
+        >
+          Add Rule
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ── Edit Group Dialog ─────────────────────────────────────────
+function EditGroupDialog({
+  open, group, onClose, onSaved, enqueueSnackbar,
+}: { open: boolean; group: CommissionGroup | null; onClose: () => void; onSaved: () => void; enqueueSnackbar: any }) {
+  const [form, setForm] = useState({ group_name: "", description: "", is_active: true });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (group) setForm({ group_name: group.group_name, description: group.description ?? "", is_active: group.is_active });
+  }, [group]);
+
+  const save = async () => {
+    if (!group) return;
+    setSaving(true);
+    try {
+      await settingsService.updateCommissionGroup(group.id, form);
+      enqueueSnackbar("Group updated", { variant: "success" });
+      onSaved();
+    } catch { enqueueSnackbar("Update failed", { variant: "error" }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <DialogTitle>Edit Commission Group</DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          <TextField size="small" fullWidth label="Group Name" value={form.group_name} onChange={e => setForm(p => ({ ...p, group_name: e.target.value }))} />
+          <TextField size="small" fullWidth multiline rows={2} label="Description" value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))} />
+          <FormControlLabel
+            control={<Switch checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} color="success" />}
+            label="Active"
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="contained" onClick={save} disabled={saving}
+          startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <Save />}>
+          Save
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ── Main Commission Tab ───────────────────────────────────────
+function CommissionTab({ enqueueSnackbar }: any) {
+  const [groups, setGroups] = useState<CommissionGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  // New group dialog
+  const [newGroupOpen, setNewGroupOpen] = useState(false);
+  const [newForm, setNewForm] = useState({ group_name: "", description: "" });
+  const [creating, setCreating] = useState(false);
+
+  // Edit group dialog
+  const [editGroup, setEditGroup] = useState<CommissionGroup | null>(null);
+
+  // Add rule dialog
+  const [addRuleGroupId, setAddRuleGroupId] = useState<number | null>(null);
+
+  // Delete rule confirm
+  const [deletingRuleId, setDeletingRuleId] = useState<number | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setGroups(await settingsService.getCommissionGroups()); }
+    catch { enqueueSnackbar("Failed to load commission groups", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const createGroup = async () => {
+    if (!newForm.group_name.trim()) return;
+    setCreating(true);
+    try {
+      const grp = await settingsService.createCommissionGroup(newForm);
+      enqueueSnackbar(`"${grp.group_name}" group created`, { variant: "success" });
+      setNewGroupOpen(false);
+      setNewForm({ group_name: "", description: "" });
+      setExpanded(grp.id);
+      load();
+    } catch { enqueueSnackbar("Create failed", { variant: "error" }); }
+    finally { setCreating(false); }
+  };
+
+  const deleteGroup = async (id: number, name: string) => {
+    if (!window.confirm(`Delete group "${name}"? This will also delete all its rules.`)) return;
+    try {
+      await settingsService.deleteCommissionGroup(id);
+      enqueueSnackbar("Group deleted", { variant: "success" });
+      if (expanded === id) setExpanded(null);
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  const deleteRule = async (ruleId: number) => {
+    setDeletingRuleId(ruleId);
+    try {
+      await settingsService.deleteCommissionRule(ruleId);
+      enqueueSnackbar("Rule deleted", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+    finally { setDeletingRuleId(null); }
+  };
+
+  const toggleRuleActive = async (rule: CommissionGroup["rules"][0]) => {
+    try {
+      await settingsService.updateCommissionRule(rule.id, { is_active: !rule.is_active });
+      enqueueSnackbar(rule.is_active ? "Rule deactivated" : "Rule activated", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Update failed", { variant: "error" }); }
+  };
+
+  return (
+    <>
+      {/* ── Header ─────────────────────────────────────────── */}
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 3 }}>
+        <Box>
+          <Typography variant="h6" fontWeight={700}>Commission Groups & Rules</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Manage partner commission structures — service-wise rates (CAB · HOTEL · TOUR)
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <Tooltip title="Refresh">
+            <IconButton onClick={load} disabled={loading}><Refresh /></IconButton>
+          </Tooltip>
+          <Button variant="contained" startIcon={<Add />} onClick={() => setNewGroupOpen(true)}
+            sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}>
+            New Group
+          </Button>
+        </Stack>
+      </Box>
+
+      {/* ── Groups List ────────────────────────────────────── */}
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}><CircularProgress /></Box>
+      ) : groups.length === 0 ? (
+        <Paper variant="outlined" sx={{ p: 6, textAlign: "center", borderRadius: 3, borderStyle: "dashed" }}>
+          <Typography color="text.secondary" mb={2}>No commission groups yet</Typography>
+          <Button variant="contained" startIcon={<Add />} onClick={() => setNewGroupOpen(true)}>Create First Group</Button>
+        </Paper>
+      ) : (
+        <Stack spacing={2}>
+          {groups.map(grp => {
+            const isOpen = expanded === grp.id;
+            return (
+              <Card
+                key={grp.id}
+                variant="outlined"
+                sx={{
+                  borderRadius: 3,
+                  overflow: "hidden",
+                  borderColor: isOpen ? "primary.main" : "divider",
+                  transition: "border-color 0.2s",
+                  boxShadow: isOpen ? "0 0 0 1px rgba(25,118,210,0.15)" : "none",
+                }}
+              >
+                {/* ── Group Header Row ── */}
+                <Box
+                  sx={{ px: 2.5, py: 2, display: "flex", alignItems: "center", gap: 1.5, cursor: "pointer", "&:hover": { bgcolor: "action.hover" } }}
+                  onClick={() => setExpanded(isOpen ? null : grp.id)}
+                >
+                  {/* icon */}
+                  <Box sx={{
+                    width: 40, height: 40, borderRadius: 2,
+                    bgcolor: grp.is_active ? "primary.main" : "action.disabledBackground",
+                    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  }}>
+                    <Groups sx={{ color: "white", fontSize: 20 }} />
+                  </Box>
+
+                  {/* name + desc */}
+                  <Box flex={1} minWidth={0}>
+                    <Stack direction="row" alignItems="center" spacing={1}>
+                      <Typography fontWeight={700} fontSize={15}>{grp.group_name}</Typography>
+                      {grp.group_name === "DEFAULT" && (
+                        <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+                      )}
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary" noWrap>
+                      {grp.description || "No description"}
+                    </Typography>
+                  </Box>
+
+                  {/* meta chips */}
+                  <Stack direction="row" spacing={1} alignItems="center" flexShrink={0}>
+                    <Chip
+                      label={grp.rules?.length === 0 ? "0 rules" : `${grp.rules?.length} rule${grp.rules?.length !== 1 ? "s" : ""}`}
+                      size="small"
+                      variant="outlined"
+                      color={grp.rules?.length > 0 ? "primary" : "default"}
+                    />
+                    <Chip
+                      label={grp.is_active ? "Active" : "Inactive"}
+                      size="small"
+                      color={grp.is_active ? "success" : "default"}
+                    />
+                  </Stack>
+
+                  {/* actions */}
+                  <Stack direction="row" spacing={0.5} onClick={e => e.stopPropagation()}>
+                    <Tooltip title="Edit Group">
+                      <IconButton size="small" onClick={() => setEditGroup(grp)}>
+                        <Edit fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete Group">
+                      <IconButton size="small" color="error" onClick={() => deleteGroup(grp.id, grp.group_name)}>
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <IconButton size="small">
+                      {isOpen ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+                    </IconButton>
+                  </Stack>
+                </Box>
+
+                {/* ── Expanded Rules Panel ── */}
+                <Collapse in={isOpen}>
+                  <Divider />
+                  <Box sx={{ p: 2.5 }}>
+                    {/* rules table header */}
+                    <Stack direction="row" alignItems="center" justifyContent="space-between" mb={2}>
+                      <Typography variant="subtitle2" fontWeight={700} color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: 0.5, fontSize: 11 }}>
+                        Commission Rules
+                      </Typography>
+                      <Button
+                        size="small" variant="outlined" startIcon={<Add />}
+                        onClick={() => setAddRuleGroupId(grp.id)}
+                        sx={{ borderRadius: 1.5, textTransform: "none", fontWeight: 600 }}
+                      >
+                        Add Rule
+                      </Button>
+                    </Stack>
+
+                    {grp.rules?.length === 0 ? (
+                      <Paper
+                        variant="outlined"
+                        sx={{ p: 3, textAlign: "center", borderRadius: 2, borderStyle: "dashed", bgcolor: "action.hover" }}
+                      >
+                        <Typography variant="body2" color="text.secondary" mb={1}>
+                          No rules yet. Add a rule to define commission rates.
+                        </Typography>
+                        <Button
+                          size="small" variant="contained" startIcon={<Add />}
+                          onClick={() => setAddRuleGroupId(grp.id)}
+                          sx={{ borderRadius: 1.5, textTransform: "none" }}
+                        >
+                          Add a Rule
+                        </Button>
+                      </Paper>
+                    ) : (
+                      <Stack spacing={1.5}>
+                        {grp.rules?.map(r => (
+                          <Paper
+                            key={r.id}
+                            variant="outlined"
+                            sx={{
+                              p: 1.5, borderRadius: 2, display: "flex", alignItems: "center", gap: 1.5,
+                              opacity: r.is_active ? 1 : 0.55,
+                              borderColor: r.is_active ? "divider" : "action.disabledBackground",
+                            }}
+                          >
+                            {/* service icon */}
+                            <Box sx={{
+                              width: 36, height: 36, borderRadius: 1.5, flexShrink: 0,
+                              bgcolor: `${SERVICE_TYPE_COLOR[r.service_type ?? ""] ?? "grey"}.50`,
+                              border: 1, borderColor: `${SERVICE_TYPE_COLOR[r.service_type ?? ""] ?? "grey"}.200`,
+                              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18,
+                            }}>
+                              {SERVICE_TYPE_ICON[r.service_type ?? ""] ?? "💰"}
+                            </Box>
+
+                            {/* service type */}
+                            <Chip
+                              label={r.service_type}
+                              size="small"
+                              color={SERVICE_TYPE_COLOR[r.service_type ?? ""] ?? "default"}
+                              sx={{ fontWeight: 700, minWidth: 60 }}
+                            />
+
+                            {/* rate value — big and clear */}
+                            <Box sx={{ flex: 1 }}>
+                              <Typography fontWeight={800} fontSize={17} lineHeight={1}>
+                                {r.commission_type === "PERCENTAGE"
+                                  ? `${r.commission_value}%`
+                                  : `₹${r.commission_value}`}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                {r.commission_type === "PERCENTAGE" ? "of booking value" : "flat per booking"}
+                                {r.city_id ? ` · City ${r.city_id}` : " · All cities"}
+                              </Typography>
+                            </Box>
+
+                            {/* dates */}
+                            <Box sx={{ textAlign: "right", minWidth: 100 }}>
+                              {r.effective_from ? (
+                                <Typography variant="caption" color="text.secondary" display="block">
+                                  {r.effective_from} → {r.effective_to ?? "∞"}
+                                </Typography>
+                              ) : (
+                                <Typography variant="caption" color="text.secondary">Always active</Typography>
+                              )}
+                            </Box>
+
+                            {/* active toggle + delete */}
+                            <Stack direction="row" spacing={0.5} alignItems="center">
+                              <Tooltip title={r.is_active ? "Deactivate rule" : "Activate rule"}>
+                                <Switch
+                                  size="small"
+                                  checked={r.is_active}
+                                  onChange={() => toggleRuleActive(r)}
+                                  color="success"
+                                />
+                              </Tooltip>
+                              <Tooltip title="Delete rule">
+                                <span>
+                                  <IconButton
+                                    size="small" color="error"
+                                    onClick={() => deleteRule(r.id)}
+                                    disabled={deletingRuleId === r.id}
+                                  >
+                                    {deletingRuleId === r.id
+                                      ? <CircularProgress size={14} />
+                                      : <Delete fontSize="small" />}
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                            </Stack>
+                          </Paper>
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                </Collapse>
+              </Card>
+            );
+          })}
+        </Stack>
+      )}
+
+      {/* ── New Group Dialog ──────────────────────────────── */}
+      <Dialog open={newGroupOpen} onClose={() => setNewGroupOpen(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+        <DialogTitle sx={{ pb: 1 }}>
+          <Typography fontWeight={700} fontSize={18}>New Commission Group</Typography>
+          <Typography variant="caption" color="text.secondary">
+            Group partners together under a shared commission structure
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField
+              size="small" fullWidth required
+              label="Group Name (e.g. Group A, Premium)"
+              value={newForm.group_name}
+              onChange={e => setNewForm(p => ({ ...p, group_name: e.target.value }))}
+              helperText="Must be unique. Partners will be assigned to this group."
+            />
+            <TextField
+              size="small" fullWidth multiline rows={2}
+              label="Description (optional)"
+              value={newForm.description}
+              onChange={e => setNewForm(p => ({ ...p, description: e.target.value }))}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setNewGroupOpen(false)} disabled={creating}>Cancel</Button>
+          <Button
+            variant="contained" onClick={createGroup}
+            disabled={creating || !newForm.group_name.trim()}
+            startIcon={creating ? <CircularProgress size={14} color="inherit" /> : <Add />}
+          >
+            Create Group
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Edit Group Dialog ─────────────────────────────── */}
+      <EditGroupDialog
+        open={!!editGroup}
+        group={editGroup}
+        onClose={() => setEditGroup(null)}
+        onSaved={() => { setEditGroup(null); load(); }}
+        enqueueSnackbar={enqueueSnackbar}
+      />
+
+      {/* ── Add Rule Dialog ───────────────────────────────── */}
+      {addRuleGroupId !== null && (
+        <AddRuleDialog
+          open={addRuleGroupId !== null}
+          groupId={addRuleGroupId}
+          onClose={() => setAddRuleGroupId(null)}
+          onSaved={() => { setAddRuleGroupId(null); load(); }}
+          enqueueSnackbar={enqueueSnackbar}
+        />
+      )}
+    </>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 5 — PRICING RULES
+// ══════════════════════════════════════════════════════════════
+
+function PricingTab({ enqueueSnackbar }: any) {
+  const [rules, setRules] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ city_id: "", vehicle_category_id: "", trip_type: "LOCAL", base_fare: "", per_km_rate: "" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setRules(await settingsService.getPricingRules()); }
+    catch { enqueueSnackbar("Failed to load pricing rules", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    try {
+      await settingsService.createPricingRule({
+        city_id: Number(form.city_id),
+        vehicle_category_id: Number(form.vehicle_category_id),
+        trip_type: form.trip_type,
+        base_fare: Number(form.base_fare),
+        per_km_rate: Number(form.per_km_rate),
+      });
+      enqueueSnackbar("Pricing rule created", { variant: "success" });
+      setDialogOpen(false);
+      load();
+    } catch { enqueueSnackbar("Create failed", { variant: "error" }); }
+  };
+
+  const del = async (id: number) => {
+    try {
+      await settingsService.deletePricingRule(id);
+      enqueueSnackbar("Deleted", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2 }}>
+      <CardHeader
+        title={<Typography fontWeight={700}>Vehicle Pricing Rules</Typography>}
+        action={
+          <Stack direction="row" spacing={1}>
+            <IconButton onClick={load}><Refresh /></IconButton>
+            <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)}>Add Rule</Button>
+          </Stack>
+        }
+      />
+      <CardContent>
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: "action.hover" } }}>
+                  <TableCell>City ID</TableCell>
+                  <TableCell>Vehicle Cat.</TableCell>
+                  <TableCell>Trip Type</TableCell>
+                  <TableCell>Base Fare</TableCell>
+                  <TableCell>Per KM</TableCell>
+                  <TableCell>Driver Allow.</TableCell>
+                  <TableCell>Night Charge</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {rules.map(r => (
+                  <TableRow key={r.id} hover>
+                    <TableCell>{r.city_id}</TableCell>
+                    <TableCell>{r.vehicle_category_id}</TableCell>
+                    <TableCell><Chip label={r.trip_type} size="small" variant="outlined" /></TableCell>
+                    <TableCell><Typography fontWeight={600}>₹{r.base_fare}</Typography></TableCell>
+                    <TableCell>₹{r.per_km_rate}/km</TableCell>
+                    <TableCell>{r.driver_allowance ? `₹${r.driver_allowance}` : "—"}</TableCell>
+                    <TableCell>{r.night_charge ? `₹${r.night_charge}` : "—"}</TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" color="error" onClick={() => del(r.id)}>
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add Pricing Rule</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            <Grid item xs={6}><TextField size="small" fullWidth label="City ID" type="number" value={form.city_id} onChange={e => setForm(p => ({ ...p, city_id: e.target.value }))} /></Grid>
+            <Grid item xs={6}><TextField size="small" fullWidth label="Vehicle Category ID" type="number" value={form.vehicle_category_id} onChange={e => setForm(p => ({ ...p, vehicle_category_id: e.target.value }))} /></Grid>
+            <Grid item xs={12}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Trip Type</InputLabel>
+                <Select value={form.trip_type} label="Trip Type" onChange={e => setForm(p => ({ ...p, trip_type: e.target.value }))}>
+                  {["LOCAL","AIRPORT","OUTSTATION","ONE_WAY","ROUND_TRIP"].map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
+              <TextField size="small" fullWidth label="Base Fare (₹)" type="number" value={form.base_fare}
+                onChange={e => setForm(p => ({ ...p, base_fare: e.target.value }))}
+                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField size="small" fullWidth label="Per KM Rate (₹)" type="number" value={form.per_km_rate}
+                onChange={e => setForm(p => ({ ...p, per_km_rate: e.target.value }))}
+                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+              />
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={add}>Create</Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB 6 — NOTIFICATION TEMPLATES
+// ══════════════════════════════════════════════════════════════
+
+function NotificationTemplatesTab({ enqueueSnackbar }: any) {
+  const [templates, setTemplates] = useState<NotificationTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [channelFilter, setChannelFilter] = useState("");
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ template_code: "", channel: "SMS", template_name: "", template_content: "", is_active: true });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try { setTemplates(await settingsService.getNotificationTemplates(channelFilter || undefined)); }
+    catch { enqueueSnackbar("Failed to load templates", { variant: "error" }); }
+    finally { setLoading(false); }
+  }, [channelFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    try {
+      await settingsService.createNotificationTemplate(form);
+      enqueueSnackbar("Template created", { variant: "success" });
+      setDialogOpen(false);
+      load();
+    } catch { enqueueSnackbar("Create failed", { variant: "error" }); }
+  };
+
+  const del = async (id: number) => {
+    try {
+      await settingsService.deleteNotificationTemplate(id);
+      enqueueSnackbar("Deleted", { variant: "success" });
+      load();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
+  };
+
+  const CHANNEL_COLOR: Record<string, any> = { SMS: "info", EMAIL: "primary", PUSH: "warning", IN_APP: "secondary" };
+
+  return (
+    <Card variant="outlined" sx={{ borderRadius: 2 }}>
+      <CardHeader
+        title={<Typography fontWeight={700}>Notification Templates</Typography>}
+        action={
+          <Stack direction="row" spacing={1} alignItems="center">
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Channel</InputLabel>
+              <Select value={channelFilter} label="Channel" onChange={e => setChannelFilter(e.target.value)}>
+                <MenuItem value="">All</MenuItem>
+                {["SMS","EMAIL","PUSH","IN_APP"].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <IconButton onClick={load}><Refresh /></IconButton>
+            <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)}>Add Template</Button>
+          </Stack>
+        }
+      />
+      <CardContent>
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: "action.hover" } }}>
+                  <TableCell>Code</TableCell>
+                  <TableCell>Name</TableCell>
+                  <TableCell>Channel</TableCell>
+                  <TableCell>Content Preview</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell align="right">Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {templates.map(t => (
+                  <TableRow key={t.id} hover>
+                    <TableCell>
+                      <Typography variant="caption" fontFamily="monospace" fontWeight={600} color="primary.main">
+                        {t.template_code}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>{t.template_name}</TableCell>
+                    <TableCell>
+                      <Chip label={t.channel} size="small" color={CHANNEL_COLOR[t.channel] ?? "default"} />
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="caption" color="text.secondary" sx={{ maxWidth: 250, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {t.template_content}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={t.is_active ? "Active" : "Inactive"} color={t.is_active ? "success" : "default"} size="small" />
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" color="error" onClick={() => del(t.id)}>
+                        <Delete fontSize="small" />
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </CardContent>
+
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Add Notification Template</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField size="small" fullWidth label="Template Code (e.g. BOOKING_CONFIRMED)" value={form.template_code} onChange={e => setForm(p => ({ ...p, template_code: e.target.value.toUpperCase() }))} />
+            <TextField size="small" fullWidth label="Template Name" value={form.template_name} onChange={e => setForm(p => ({ ...p, template_name: e.target.value }))} />
+            <FormControl fullWidth size="small">
+              <InputLabel>Channel</InputLabel>
+              <Select value={form.channel} label="Channel" onChange={e => setForm(p => ({ ...p, channel: e.target.value }))}>
+                {["SMS","EMAIL","PUSH","IN_APP"].map(c => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField size="small" fullWidth multiline rows={4} label="Template Content (use {{variable}})" value={form.template_content} onChange={e => setForm(p => ({ ...p, template_content: e.target.value }))} />
+            <FormControlLabel control={<Switch checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} />} label="Active" />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={add}>Create</Button>
+        </DialogActions>
+      </Dialog>
+    </Card>
+  );
+}
