@@ -65,6 +65,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "partners", label: "Partners", icon: "Handshake", path: "/partners", roles: ["SUPER_ADMIN","ADMIN","CCO","VERIFICATION_OFFICER"], keywords: "partner vendor business cab owner" },
       { key: "drivers", label: "Drivers", icon: "Person", path: "/drivers", roles: ["SUPER_ADMIN","ADMIN","CCO","VERIFICATION_OFFICER"], keywords: "driver cab driver employee" },
       { key: "vehicles", label: "Vehicles", icon: "DirectionsCar", path: "/vehicles", roles: ["SUPER_ADMIN","ADMIN","VERIFICATION_OFFICER"], keywords: "vehicle cab car fleet" },
+      { key: "onboarding-docs", label: "Onboarding Docs", icon: "Description", path: "/onboarding-docs", roles: ["SUPER_ADMIN","ADMIN","CCO","VERIFICATION_OFFICER"], keywords: "onboarding guide form pdf partner driver vehicle documents" },
       { key: "vehicles-maintenance", label: "Vehicle Maintenance", icon: "Build", path: "/vehicles/maintenance", roles: ["SUPER_ADMIN","ADMIN"], keywords: "maintenance service repair vehicle" },
       { key: "hotels", label: "Hotels", icon: "Hotel", path: "/hotels", roles: ["SUPER_ADMIN","ADMIN","VERIFICATION_OFFICER"], keywords: "hotel stay room property" },
       { key: "hotels-commission-audit", label: "Hotel Commission Audit", icon: "Receipt", path: "/hotels/commission-audit", roles: ["SUPER_ADMIN","ADMIN"], keywords: "commission hotel audit gst" },

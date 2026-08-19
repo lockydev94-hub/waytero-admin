@@ -18,6 +18,7 @@ import {
   History, Notifications, ChevronLeft, Logout, LightMode, DarkMode, LocalOffer, HeadsetMic, DirectionsRun,
   AccountBalanceWallet, Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
   Receipt, PersonOff, MarkEmailRead, Campaign,
+  Description,
 } from "@mui/icons-material";
 import { useAuthStore } from "../stores/authStore";
 import { useUiStore }   from "../stores/uiStore";
@@ -61,6 +62,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   PersonOff:       <PersonOff />,
   MarkEmailRead:   <MarkEmailRead />,
   Campaign:        <Campaign />,
+  Description:     <Description />,
 };
 
 export function AdminLayout() {

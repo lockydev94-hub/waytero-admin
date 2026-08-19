@@ -54,6 +54,7 @@ const TaxGstPage                = lazy(() => import("../pages/tax/TaxGstPage"));
 const AccountDeletionPage       = lazy(() => import("../pages/accountDeletion/AccountDeletionRequestsPage"));
 const EmailLogsPage             = lazy(() => import("../pages/email/EmailLogsPage"));
 const NoticesPage               = lazy(() => import("../pages/notices/NoticesPage"));
+const OnboardingDocsPage        = lazy(() => import("../pages/onboarding-docs/OnboardingDocsPage"));
 
 function PageLoader() {
   return (
@@ -132,6 +133,7 @@ export function AppRoutes() {
             <Route path="/account-deletion"            element={<AccountDeletionPage />} />
             <Route path="/email/logs"                  element={<EmailLogsPage />} />
             <Route path="/notices"                      element={<NoticesPage />} />
+            <Route path="/onboarding-docs"             element={<OnboardingDocsPage />} />
           </Route>
         </Route>
 
