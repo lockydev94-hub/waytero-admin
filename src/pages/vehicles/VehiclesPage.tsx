@@ -57,6 +57,7 @@ import {
 import { settingsService, City, VehicleCategory, uploadMedia } from "../../services/settings.service";
 import apiClient from "../../services/api";
 import { partnerService } from "../../services/partner.service";
+import MediaPicker from "../../components/media/MediaPicker";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -1142,7 +1143,7 @@ function CloudinaryFileUpload({
 }: CloudinaryFileUploadProps) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [dragOver, setDragOver] = useState(false);
@@ -1170,13 +1171,7 @@ function CloudinaryFileUpload({
     } finally {
       setUploading(false);
       setProgress(0);
-      if (fileRef.current) fileRef.current.value = "";
     }
-  };
-
-  const onInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) handleFile(f);
   };
 
   const onDrop = (e: React.DragEvent) => {
@@ -1186,22 +1181,25 @@ function CloudinaryFileUpload({
     if (f) handleFile(f);
   };
 
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    const first = items[0];
+    if (first) {
+      onUploaded(first.secure_url);
+      enqueueSnackbar(`${label} uploaded successfully`, { variant: "success" });
+    }
+  };
+
+  const onPickerUploaded = async (result: { secure_url: string }) => {
+    onUploaded(result.secure_url);
+  };
+
   const isImage = assetType === "photo";
 
   return (
     <Box>
-      {/* Hidden file input */}
-      <input
-        ref={fileRef}
-        type="file"
-        accept={accept}
-        style={{ display: "none" }}
-        onChange={onInputChange}
-      />
-
       {/* Drop zone / upload area */}
       <Box
-        onClick={() => !uploading && fileRef.current?.click()}
+        onClick={() => !uploading && setPickerOpen(true)}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
@@ -1292,6 +1290,7 @@ function CloudinaryFileUpload({
               <Button
                 size="small" variant="outlined"
                 startIcon={<CloudUpload fontSize="small" />}
+                onClick={(e) => { e.stopPropagation(); setPickerOpen(true); }}
                 sx={{ fontSize: 11 }}
               >
                 Replace
@@ -1315,6 +1314,21 @@ function CloudinaryFileUpload({
           </Stack>
         )}
       </Box>
+
+      {pickerOpen && (
+        <MediaPicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={onPickerSelect}
+          onUploaded={onPickerUploaded}
+          folder={folder}
+          uploadFolder={folder}
+          assetType={assetType}
+          accept={accept}
+          crop={isImage ? { presets: [{ label: "Free", ratio: null }], outputSizes: [0, 800, 1200, 1600] } : undefined}
+          title={`Upload ${label}`}
+        />
+      )}
     </Box>
   );
 }

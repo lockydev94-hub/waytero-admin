@@ -1,33 +1,31 @@
 // ============================================================
-// WAYTERO ADMIN — CMS MEDIA UPLOADER
+// WAYTERO ADMIN — MEDIA UPLOADER (MediaPicker-powered)
 // Doc Ref: Migration 0044_website_cms
 //
 //  Reusable single-file media picker for CMS section / header / footer
-//  editors. Routes through the shared /admin/settings/upload-media
+//  editors (and blog). Routes through the shared /admin/settings/upload-media
 //  endpoint with folder = waytero/cms/{section_key}/ so all assets live
 //  under the CMS namespace in Cloudinary.
 //
-//  Two-step flow when cropAspectRatio is set on raster images:
-//    1. Admin picks a file (click or drag-drop).
-//    2. ImageCropper modal opens with the file. Admin zooms / pans
-//       inside the required aspect ratio and exports the cropped
-//       blob at outputWidth × outputHeight.
-//    3. The cropped blob is uploaded to Cloudinary, and the resulting
-//       secure_url is emitted via onChange.
+//  Clicking the drop zone opens the shared MediaPicker modal instead of a
+//  raw file input — the admin can either:
+//    1. Pick an image already in Cloudinary (gallery tab), or
+//    2. Upload a new file, with an optional crop/resize step.
 //
-//  SVG / video / no-crop kinds skip step 2 and upload the file directly.
+//  SVG / video kinds skip the crop step and upload the file directly.
 // ============================================================
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
-  Box, IconButton, LinearProgress, Stack, Typography, alpha, useTheme,
+  Box, Button, IconButton, LinearProgress, Stack, Typography, alpha, useTheme,
 } from "@mui/material";
 import { CloudUpload, Close } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 
+import MediaPicker from "../../../components/media/MediaPicker";
 import { uploadMedia } from "../../../services/settings.service";
 import { apiErrorMessage } from "../../../utils/apiError";
-import ImageCropper, { OutputFormat } from "./ImageCropper";
+import { OutputFormat } from "./ImageCropper";
 
 export type CmsMediaKind = "image" | "video" | "logo" | "icon" | "payment_icon";
 
@@ -85,16 +83,6 @@ const ACCEPT_FOR: Record<CmsMediaKind, string> = {
   payment_icon: "image/png,image/jpeg,image/webp,image/svg+xml",
 };
 
-/** Raster mime types that the canvas-based cropper understands. */
-const CROPPABLE_MIME = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-]);
-
-const isCroppable = (file: File): boolean => CROPPABLE_MIME.has(file.type);
-
 export default function MediaUploader({
   value,
   onChange,
@@ -108,30 +96,18 @@ export default function MediaUploader({
 }: Props) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
-  const fileRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
-
-  // Crop flow state — pending holds the picked file waiting to be
-  // cropped; once the cropper confirms, the resulting blob is uploaded.
-  const [pending, setPending] = useState<{ url: string; file: File } | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const isVideo = kind === "video";
 
-  const upload = async (file: File | Blob, originalName: string) => {
+  const upload = async (file: File) => {
     setBusy(true);
     setProgress(0);
     try {
-      // uploadMedia expects a File; Blob works but its name is empty.
-      // Use the original name (with new extension if the cropper changed it).
-      const asFile =
-        file instanceof File
-          ? file
-          : new File([file], originalName, {
-              type: file.type || "application/octet-stream",
-            });
-      const r = await uploadMedia(asFile, ASSET_TYPE_FOR[kind], {
+      const r = await uploadMedia(file, ASSET_TYPE_FOR[kind], {
         folderOverride: folder,
         onProgress: setProgress,
       });
@@ -142,52 +118,31 @@ export default function MediaUploader({
     } finally {
       setBusy(false);
       setProgress(0);
-      if (fileRef.current) fileRef.current.value = "";
     }
   };
 
-  const onCropConfirm = async (blob: Blob, fileName: string) => {
-    if (!pending) return;
-    const srcUrl = pending.url;
-    setPending(null);
-    if (srcUrl) URL.revokeObjectURL(srcUrl);
-    await upload(blob, fileName);
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    const first = items[0];
+    if (first) onChange(first.secure_url);
   };
 
-  const onCropClose = () => {
-    if (pending) URL.revokeObjectURL(pending.url);
-    setPending(null);
-    if (fileRef.current) fileRef.current.value = "";
-  };
+  // Translate the legacy fixed CropSpec into the MediaPicker crop spec.
+  const pickerCrop = useMemo(() => {
+    if (!crop) return undefined;
+    return {
+      presets: [{ label: "Fixed", ratio: crop.aspectRatio }],
+      outputWidth: crop.outputWidth,
+      outputHeight: crop.outputHeight,
+    };
+  }, [crop]);
 
-  const pick = (file: File) => {
-    // Raster + crop spec → open the cropper; upload happens after confirm.
-    if (crop && isCroppable(file)) {
-      const url = URL.createObjectURL(file);
-      setPending({ url, file });
-      return;
-    }
-    void upload(file, file.name);
+  const openPicker = () => {
+    if (disabled || busy) return;
+    setPickerOpen(true);
   };
-
-  const onFiles = (list: FileList | null) => {
-    const f = list?.[0];
-    if (f) pick(f);
-  };
-
-  // Memoize the crop spec so the modal doesn't reopen on every keystroke.
-  const cropSpec = useMemo(() => crop, [crop]);
 
   return (
     <Box>
-      <input
-        ref={fileRef}
-        type="file"
-        accept={ACCEPT_FOR[kind]}
-        style={{ display: "none" }}
-        onChange={(e) => onFiles(e.target.files)}
-      />
-
       {value ? (
         <Box
           sx={{
@@ -234,15 +189,24 @@ export default function MediaUploader({
           >
             <Close fontSize="small" />
           </IconButton>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={openPicker}
+            disabled={disabled || busy}
+            sx={{ position: "absolute", bottom: 6, left: 6, bgcolor: "background.paper", boxShadow: 1 }}
+          >
+            Replace
+          </Button>
         </Box>
       ) : (
         <Box
           role="button"
           tabIndex={disabled ? -1 : 0}
           aria-label={label}
-          onClick={() => !busy && !disabled && fileRef.current?.click()}
+          onClick={openPicker}
           onKeyDown={(e) => {
-            if ((e.key === "Enter" || e.key === " ") && !busy && !disabled) fileRef.current?.click();
+            if ((e.key === "Enter" || e.key === " ") && !busy && !disabled) openPicker();
           }}
           onDragOver={(e) => {
             e.preventDefault();
@@ -252,7 +216,10 @@ export default function MediaUploader({
           onDrop={(e) => {
             e.preventDefault();
             setDragOver(false);
-            if (!busy && !disabled) onFiles(e.dataTransfer.files);
+            if (!busy && !disabled) {
+              const f = e.dataTransfer.files?.[0];
+              if (f) void upload(f);
+            }
           }}
           sx={{
             height: previewHeight,
@@ -295,18 +262,17 @@ export default function MediaUploader({
         />
       )}
 
-      {pending && cropSpec && (
-        <ImageCropper
-          src={pending.url}
-          aspectRatio={cropSpec.aspectRatio}
-          outputWidth={cropSpec.outputWidth}
-          outputHeight={cropSpec.outputHeight}
-          format={cropSpec.format ?? "image/jpeg"}
-          quality={cropSpec.quality ?? 0.92}
-          open
-          onClose={onCropClose}
-          onConfirm={onCropConfirm}
-          title={`Crop to ${cropSpec.outputWidth}×${cropSpec.outputHeight}`}
+      {pickerOpen && (
+        <MediaPicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={onPickerSelect}
+          folder={folder}
+          kind={kind}
+          assetType={ASSET_TYPE_FOR[kind]}
+          uploadFolder={folder}
+          accept={ACCEPT_FOR[kind]}
+          crop={pickerCrop}
         />
       )}
     </Box>

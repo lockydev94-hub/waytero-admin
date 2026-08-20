@@ -46,6 +46,7 @@ import {
 } from "../../services/partner.service";
 import { settingsService, City, State, ServiceTypeRecord } from "../../services/settings.service";
 import { walletService } from "../../services/wallet.service";
+import MediaPicker from "../../components/media/MediaPicker";
 
 // ── States helper ─────────────────────────────────────────────────────────────
 function useStates() {
@@ -205,16 +206,9 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
   });
 
   const [step, setStep] = useState(0);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoPickerOpen, setLogoPickerOpen] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
-
-  const handleLogoSelect = (file: File) => {
-    setLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => setLogoPreview(e.target?.result as string);
-    reader.readAsDataURL(file);
-  };
 
   const { data: states = [] } = useStates();
 
@@ -270,14 +264,14 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
         commission_group_id: form.commission_group_id ? Number(form.commission_group_id) : undefined,
       }),
     onSuccess: async (res: any) => {
-      // If a logo was selected, upload it now that we have a partner_id
-      if (logoFile && res?.data?.partner_id) {
+      // If a logo was picked, persist it now that we have a partner_id
+      if (logoUrl && res?.data?.partner_id) {
         setLogoUploading(true);
         try {
-          await partnerService.uploadLogo(res.data.partner_id, logoFile);
+          await partnerService.editPartner(res.data.partner_id, { logo_url: logoUrl });
           enqueueSnackbar("Partner registered with logo successfully", { variant: "success" });
         } catch {
-          enqueueSnackbar("Partner registered — logo upload failed (retry from Edit)", { variant: "warning" });
+          enqueueSnackbar("Partner registered — logo save failed (retry from Edit)", { variant: "warning" });
         } finally {
           setLogoUploading(false);
         }
@@ -294,8 +288,7 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
 
   const resetAndClose = () => {
     setStep(0);
-    setLogoFile(null);
-    setLogoPreview(null);
+    setLogoUrl(null);
     setForm({
       partner_type: "INDIVIDUAL", owner_name: "", business_name: "", mobile: "", email: "",
       city_id: "", onboarding_source: "ADMIN",
@@ -320,6 +313,7 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
   const STEP_ICONS = [<Person />, <LocationCity />, <GroupWork />];
 
   return (
+    <>
     <Dialog open={open} onClose={resetAndClose} maxWidth="sm" fullWidth
       PaperProps={{ sx: { borderRadius: 4, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" } }}>
 
@@ -481,22 +475,21 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2.5 }}>
               <Box sx={{
                 width: 80, height: 80, borderRadius: 2.5,
-                border: "2px dashed", borderColor: logoPreview ? "primary.main" : "divider",
+                border: "2px dashed", borderColor: logoUrl ? "primary.main" : "divider",
                 overflow: "hidden", flexShrink: 0, bgcolor: "action.hover",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                {logoPreview
-                  ? <img src={logoPreview} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {logoUrl
+                  ? <img src={logoUrl} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : <Image sx={{ color: "text.disabled", fontSize: 32 }} />}
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Button variant="outlined" component="label" size="small" startIcon={<CloudUpload />} sx={{ borderRadius: 2 }}>
-                  {logoFile ? logoFile.name.slice(0, 22) + (logoFile.name.length > 22 ? "…" : "") : "Upload Logo"}
-                  <input hidden type="file" accept="image/*"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoSelect(f); }} />
+                <Button variant="outlined" size="small" startIcon={<CloudUpload />} sx={{ borderRadius: 2 }}
+                  onClick={() => setLogoPickerOpen(true)}>
+                  Upload Logo
                 </Button>
-                {logoFile && (
-                  <Button size="small" color="error" onClick={() => { setLogoFile(null); setLogoPreview(null); }} sx={{ ml: 1 }}>
+                {logoUrl && (
+                  <Button size="small" color="error" onClick={() => setLogoUrl(null)} sx={{ ml: 1 }}>
                     Remove
                   </Button>
                 )}
@@ -882,6 +875,17 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
         )}
       </DialogActions>
     </Dialog>
+
+    <MediaPicker
+      open={logoPickerOpen}
+      onClose={() => setLogoPickerOpen(false)}
+      onSelect={(items) => { if (items[0]) setLogoUrl(items[0].secure_url); }}
+      folder="waytero/partners"
+      uploadFolder="waytero/partners"
+      kind="logo"
+      title="Upload partner logo"
+    />
+    </>
   );
 }
 
@@ -905,24 +909,17 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
   const [editServices, setEditServices] = useState<string[]>([]);
   const [servicesSaving, setServicesSaving] = useState(false);
 
-  const [editLogoFile, setEditLogoFile] = useState<File | null>(null);
-  const [editLogoPreview, setEditLogoPreview] = useState<string | null>(null);
+  const [editLogoUrl, setEditLogoUrl] = useState<string | null>(null);
+  const [editLogoPickerOpen, setEditLogoPickerOpen] = useState(false);
   const [editLogoUploading, setEditLogoUploading] = useState(false);
 
-  const handleEditLogoSelect = (file: File) => {
-    setEditLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => setEditLogoPreview(e.target?.result as string);
-    reader.readAsDataURL(file);
-  };
-
   const handleEditLogoUpload = async () => {
-    if (!editLogoFile || !partner) return;
+    if (!editLogoUrl || !partner) return;
     setEditLogoUploading(true);
     try {
-      await partnerService.uploadLogo(partner.id, editLogoFile);
+      await partnerService.editPartner(partner.id, { logo_url: editLogoUrl });
       enqueueSnackbar("Logo updated successfully", { variant: "success" });
-      setEditLogoFile(null); setEditLogoPreview(null);
+      setEditLogoUrl(null);
       onSaved();
     } catch (e: any) {
       enqueueSnackbar(e?.response?.data?.detail ?? "Logo upload failed", { variant: "error" });
@@ -941,7 +938,7 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
   React.useEffect(() => {
     if (partner && open) {
       setEditTab(0);
-      setEditLogoFile(null); setEditLogoPreview(null);
+      setEditLogoUrl(null);
       // Seed services from partner detail (partner.services is [{service_type, is_active}])
       const activeServices = ((partner as any).services ?? [])
         .filter((s: any) => s.is_active)
@@ -1001,6 +998,7 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
   const selectedCity = cities.find((c) => c.id === Number(form.city_id));
 
   return (
+    <>
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth
       PaperProps={{ sx: { borderRadius: 4, overflow: "hidden", boxShadow: "0 24px 80px rgba(0,0,0,0.18)" } }}>
 
@@ -1320,8 +1318,8 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
                 overflow: "hidden", flexShrink: 0, bgcolor: "action.hover",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
-                {editLogoPreview
-                  ? <img src={editLogoPreview} alt="new logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                {editLogoUrl
+                  ? <img src={editLogoUrl} alt="new logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : partner?.logo_url
                   ? <img src={partner.logo_url} alt="logo" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                   : (partner?.partner_type === "COMPANY" ? <Business sx={{ color: "text.disabled", fontSize: 40 }} /> : <Person sx={{ color: "text.disabled", fontSize: 40 }} />)
@@ -1329,34 +1327,28 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
               </Box>
               <Box sx={{ flex: 1 }}>
                 <Typography variant="subtitle2" fontWeight={700} gutterBottom>
-                  {editLogoPreview ? "New Logo Selected" : partner?.logo_url ? "Current Logo" : "No Logo Uploaded"}
+                  {editLogoUrl ? "New Logo Selected" : partner?.logo_url ? "Current Logo" : "No Logo Uploaded"}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
                   PNG, JPG, max 2MB. Displayed on partner profile, invoices, and partner app.
                 </Typography>
                 <Stack direction="row" gap={1}>
-                  <Button variant="outlined" component="label" size="small" startIcon={<CloudUpload />} sx={{ borderRadius: 2 }}>
-                    {editLogoFile ? "Change File" : "Choose File"}
-                    <input hidden type="file" accept="image/*"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleEditLogoSelect(f); }} />
+                  <Button variant="outlined" size="small" startIcon={<CloudUpload />} sx={{ borderRadius: 2 }}
+                    onClick={() => setEditLogoPickerOpen(true)}>
+                    Choose Logo
                   </Button>
-                  {editLogoFile && (
+                  {editLogoUrl && (
                     <Button variant="contained" size="small" startIcon={editLogoUploading ? <CircularProgress size={14} /> : <Save />}
                       onClick={handleEditLogoUpload} disabled={editLogoUploading} sx={{ borderRadius: 2 }}>
                       Upload Now
                     </Button>
                   )}
-                  {editLogoFile && (
-                    <Button size="small" color="error" onClick={() => { setEditLogoFile(null); setEditLogoPreview(null); }}>
+                  {editLogoUrl && (
+                    <Button size="small" color="error" onClick={() => setEditLogoUrl(null)}>
                       Cancel
                     </Button>
                   )}
                 </Stack>
-                {editLogoFile && (
-                  <Typography variant="caption" color="primary.main" display="block" sx={{ mt: 0.75 }}>
-                    Selected: {editLogoFile.name}
-                  </Typography>
-                )}
               </Box>
             </Box>
 
@@ -1460,6 +1452,17 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
         </Button>
       </DialogActions>
     </Dialog>
+
+    <MediaPicker
+      open={editLogoPickerOpen}
+      onClose={() => setEditLogoPickerOpen(false)}
+      onSelect={(items) => { if (items[0]) setEditLogoUrl(items[0].secure_url); }}
+      folder="waytero/partners"
+      uploadFolder="waytero/partners"
+      kind="logo"
+      title="Upload partner logo"
+    />
+    </>
   );
 }
 
@@ -1821,6 +1824,7 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
 
   // Logo
   const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPickerOpen, setLogoPickerOpen] = useState(false);
 
   // Commission group state
   const [commGroupOpen, setCommGroupOpen] = useState(false);
@@ -1931,11 +1935,11 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
     } finally { setBankSaving(false); }
   };
 
-  const handleLogoUpload = async (file: File) => {
+  const handleLogoUrl = async (url: string) => {
     if (!partner) return;
     setLogoUploading(true);
     try {
-      await partnerService.uploadLogo(partner.id, file);
+      await partnerService.editPartner(partner.id, { logo_url: url });
       enqueueSnackbar("Logo uploaded", { variant: "success" }); refetch();
     } catch (e: any) {
       enqueueSnackbar(e?.response?.data?.detail ?? "Logo upload failed", { variant: "error" });
@@ -1971,15 +1975,13 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
                     {partner.partner_type === "COMPANY" ? <Business sx={{ color: "#1a237e" }} /> : <Person sx={{ color: "#1a237e" }} />}
                   </Avatar>
                   <Tooltip title="Upload Logo">
-                    <Box component="label" sx={{
+                    <Box onClick={() => setLogoPickerOpen(true)} sx={{
                       position: "absolute", bottom: -4, right: -4,
                       bgcolor: "white", borderRadius: "50%", width: 22, height: 22,
                       display: "flex", alignItems: "center", justifyContent: "center",
                       cursor: "pointer", boxShadow: 2,
                     }}>
                       {logoUploading ? <CircularProgress size={12} sx={{ color: "#1a237e" }} /> : <Image sx={{ fontSize: 13, color: "#1a237e" }} />}
-                      <input hidden type="file" accept="image/*"
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLogoUpload(f); }} />
                     </Box>
                   </Tooltip>
                 </Box>
@@ -2795,6 +2797,16 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <MediaPicker
+        open={logoPickerOpen}
+        onClose={() => setLogoPickerOpen(false)}
+        onSelect={(items) => { if (items[0]) void handleLogoUrl(items[0].secure_url); }}
+        folder="waytero/partners"
+        uploadFolder="waytero/partners"
+        kind="logo"
+        title="Upload partner logo"
+      />
     </>
   );
 }

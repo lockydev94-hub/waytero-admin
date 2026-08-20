@@ -32,7 +32,9 @@ import {
 import {
   partnerService, AdminPartnerListItem, STATUS_META,
 } from "../../services/partner.service";
-import { settingsService } from "../../services/settings.service";
+import { settingsService, MediaUploadResult } from "../../services/settings.service";
+import { MediaLibraryItem } from "../../services/media.service";
+import MediaPicker from "../../components/media/MediaPicker";
 import { CACHE_TTL } from "../../constants";
 
 // ── Constants ─────────────────────────────────────────────────
@@ -171,61 +173,97 @@ function StaffDocumentUploader({ staffId, documents, uploading, onUpload }: {
   staffId: string; documents: StaffDocument[]; uploading: string | null;
   onUpload: (file: File, docType: string) => Promise<void>;
 }) {
-  const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const { enqueueSnackbar } = useSnackbar();
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerType, setPickerType] = useState<string | null>(null);
+  const uploadedDocIds = useRef<Set<string>>(new Set());
   const getDoc = (type: string) => documents.find(d => d.document_type === type);
   const isPdf = (url: string) => url.includes(".pdf") || url.includes("/raw/");
+  const activeType = DOC_TYPES.find(t => t.type === pickerType);
+  const pickerAccept = activeType?.accept ?? "image/*,application/pdf";
+
+  const handleDocUploaded = async (result: MediaUploadResult, file: File) => {
+    uploadedDocIds.current.add(result.public_id);
+    if (pickerType) await onUpload(file, pickerType);
+  };
+
+  const handleDocPicked = async (items: MediaLibraryItem[]) => {
+    const type = pickerType;
+    if (!type) return;
+    for (const item of items) {
+      if (uploadedDocIds.current.has(item.public_id)) continue;
+      try {
+        const blob = await (await fetch(item.secure_url)).blob();
+        const name = item.public_id.split("/").pop() ?? "document";
+        await onUpload(new File([blob], name, { type: blob.type }), type);
+      } catch {
+        enqueueSnackbar("Could not register picked document", { variant: "error" });
+      }
+    }
+  };
+
   return (
-    <Grid container spacing={2}>
-      {DOC_TYPES.map(({ type, label, accept, hint }) => {
-        const existing = getDoc(type);
-        const isLoading = uploading === type;
-        return (
-          <Grid item xs={12} sm={6} key={type}>
-            <input type="file" accept={accept} style={{ display: "none" }}
-              ref={el => { inputRefs.current[type] = el; }}
-              onChange={async e => { const f = e.target.files?.[0]; if (f) await onUpload(f, type); e.target.value = ""; }}
-            />
-            <Paper variant="outlined" sx={{
-              p: 1.5, borderRadius: 2, height: "100%",
-              borderColor: existing ? alpha("#059669", 0.4) : "divider",
-              bgcolor: existing ? alpha("#059669", 0.02) : "transparent",
-            }}>
-              <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                <Box sx={{ width: 52, height: 52, borderRadius: 1.5, overflow: "hidden", bgcolor: "action.hover", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid", borderColor: "divider" }}>
-                  {existing
-                    ? isPdf(existing.file_url)
-                      ? <Description sx={{ color: "#DC2626", fontSize: 28 }} />
-                      : <Box component="img" src={existing.file_url} alt={label} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <CloudUpload sx={{ color: "text.disabled", fontSize: 22 }} />}
-                </Box>
-                <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 0.25 }}>
-                    <Typography fontWeight={700} fontSize={12} noWrap>{label}</Typography>
-                    {existing && <CheckCircleOutline sx={{ color: "#059669", fontSize: 14 }} />}
-                  </Stack>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75, lineHeight: 1.3 }}>{hint}</Typography>
-                  <Stack direction="row" spacing={0.75}>
-                    <Button size="small" variant={existing ? "outlined" : "contained"}
-                      startIcon={isLoading ? <CircularProgress size={12} color="inherit" /> : <CloudUpload sx={{ fontSize: 14 }} />}
-                      onClick={() => inputRefs.current[type]?.click()} disabled={isLoading}
-                      sx={{ fontSize: 11, py: 0.4, px: 1, minWidth: 0 }}>
-                      {isLoading ? "Uploading…" : existing ? "Replace" : "Upload"}
-                    </Button>
-                    {existing && (
-                      <Tooltip title="View document">
-                        <IconButton size="small" onClick={() => window.open(existing.file_url, "_blank")} sx={{ p: 0.4 }}>
-                          <OpenInNew sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                  </Stack>
-                </Box>
-              </Stack>
-            </Paper>
-          </Grid>
-        );
-      })}
-    </Grid>
+    <>
+      <Grid container spacing={2}>
+        {DOC_TYPES.map(({ type, label, accept, hint }) => {
+          const existing = getDoc(type);
+          const isLoading = uploading === type;
+          return (
+            <Grid item xs={12} sm={6} key={type}>
+              <Paper variant="outlined" sx={{
+                p: 1.5, borderRadius: 2, height: "100%",
+                borderColor: existing ? alpha("#059669", 0.4) : "divider",
+                bgcolor: existing ? alpha("#059669", 0.02) : "transparent",
+              }}>
+                <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                  <Box sx={{ width: 52, height: 52, borderRadius: 1.5, overflow: "hidden", bgcolor: "action.hover", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid", borderColor: "divider" }}>
+                    {existing
+                      ? isPdf(existing.file_url)
+                        ? <Description sx={{ color: "#DC2626", fontSize: 28 }} />
+                        : <Box component="img" src={existing.file_url} alt={label} sx={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <CloudUpload sx={{ color: "text.disabled", fontSize: 22 }} />}
+                  </Box>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ mb: 0.25 }}>
+                      <Typography fontWeight={700} fontSize={12} noWrap>{label}</Typography>
+                      {existing && <CheckCircleOutline sx={{ color: "#059669", fontSize: 14 }} />}
+                    </Stack>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.75, lineHeight: 1.3 }}>{hint}</Typography>
+                    <Stack direction="row" spacing={0.75}>
+                      <Button size="small" variant={existing ? "outlined" : "contained"}
+                        startIcon={isLoading ? <CircularProgress size={12} color="inherit" /> : <CloudUpload sx={{ fontSize: 14 }} />}
+                        onClick={() => { setPickerType(type); setPickerOpen(true); }} disabled={isLoading}
+                        sx={{ fontSize: 11, py: 0.4, px: 1, minWidth: 0 }}>
+                        {isLoading ? "Uploading…" : existing ? "Replace" : "Upload"}
+                      </Button>
+                      {existing && (
+                        <Tooltip title="View document">
+                          <IconButton size="small" onClick={() => window.open(existing.file_url, "_blank")} sx={{ p: 0.4 }}>
+                            <OpenInNew sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                    </Stack>
+                  </Box>
+                </Stack>
+              </Paper>
+            </Grid>
+          );
+        })}
+      </Grid>
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => { setPickerOpen(false); setPickerType(null); }}
+        onSelect={handleDocPicked}
+        onUploaded={handleDocUploaded}
+        folder="waytero/users"
+        uploadFolder="waytero/users"
+        kind="image"
+        assetType="document"
+        accept={pickerAccept}
+        title={activeType ? `Upload ${activeType.label}` : "Upload document"}
+      />
+    </>
   );
 }
 
@@ -281,8 +319,7 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
   const [nomineeAddress, setNomineeAddress] = useState(ep?.nominee_address ?? "");
   const [idCardNotes, setIdCardNotes] = useState(ep?.id_card_notes ?? "");
   const [resetPwd, setResetPwd] = useState("");
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
 
   const buildProfile = (): Partial<StaffProfile> => ({
     date_of_birth: dob || undefined, gender: gender || undefined, blood_group: bloodGroup || undefined,
@@ -299,6 +336,11 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
     nominee_phone: nomineePhone || undefined, nominee_address: nomineeAddress || undefined,
     id_card_notes: idCardNotes || undefined,
   });
+
+  const handlePhotoPicked = (items: MediaLibraryItem[]) => {
+    const url = items[0]?.secure_url;
+    if (url) setPhotoUrl(url);
+  };
 
   const handleSave = async () => {
     if (!firstName || !email || !mobile || !userType) {
@@ -423,16 +465,6 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
             </Grid>
             {!isEdit && <Grid item xs={12} sm={6}><TextField {...F} label="Password *" type="password" value={password} onChange={e => setPassword(e.target.value)} /></Grid>}
             <Grid item xs={12}>
-              <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
-                onChange={async e => {
-                  const file = e.target.files?.[0];
-                  if (!file || !editStaff?.id) return;
-                  setPhotoUploading(true);
-                  try { const u = await staffService.uploadPhoto(editStaff.id, file); setPhotoUrl(u.profile_image_url ?? ""); qc.invalidateQueries({ queryKey: ["admin-staff"] }); enqueueSnackbar("Photo uploaded", { variant: "success" }); }
-                  catch (err: any) { enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" }); }
-                  finally { setPhotoUploading(false); e.target.value = ""; }
-                }}
-              />
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, display: "flex", alignItems: "center", gap: 2 }}>
                 <Avatar src={photoUrl || undefined} sx={{ width: 72, height: 72, border: "2px solid", borderColor: "divider" }}>
                   {firstName ? firstName[0].toUpperCase() : <Person />}
@@ -441,7 +473,7 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
                   <Typography fontWeight={700} fontSize={13} gutterBottom>Profile Photo</Typography>
                   <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>JPG / PNG / WebP · Max 5 MB</Typography>
                   {isEdit
-                    ? <Button size="small" variant="outlined" startIcon={photoUploading ? <CircularProgress size={14} /> : <CloudUpload fontSize="small" />} onClick={() => photoInputRef.current?.click()} disabled={photoUploading}>{photoUploading ? "Uploading…" : photoUrl ? "Replace Photo" : "Upload Photo"}</Button>
+                    ? <Button size="small" variant="outlined" startIcon={<CloudUpload fontSize="small" />} onClick={() => setPhotoPickerOpen(true)}>{photoUrl ? "Replace Photo" : "Upload Photo"}</Button>
                     : <Alert severity="info" sx={{ py: 0.5, fontSize: 11 }}>Save first, then upload photo.</Alert>}
                 </Box>
               </Paper>
@@ -581,6 +613,17 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
           {saving ? "Saving…" : isEdit ? "Save Changes" : "Create Staff"}
         </Button>
       </DialogActions>
+      <MediaPicker
+        open={photoPickerOpen}
+        onClose={() => setPhotoPickerOpen(false)}
+        onSelect={handlePhotoPicked}
+        folder="waytero/users"
+        uploadFolder="waytero/users"
+        kind="image"
+        assetType="photo"
+        accept="image/jpeg,image/png,image/webp"
+        title="Upload profile photo"
+      />
     </Dialog>
   );
 }
@@ -598,14 +641,21 @@ function StaffUploadsModal({ staff, onClose, onStaffUpdated }: {
   const [documents, setDocuments] = useState<StaffDocument[]>([]);
   const [photoUrl, setPhotoUrl] = useState(staff.profile_image_url ?? "");
   const [tab, setTab] = useState(0);
-  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
 
   useEffect(() => { staffService.listDocuments(staff.id).then(r => setDocuments(r.documents)).catch(() => {}); }, [staff.id]);
 
-  const handlePhotoUpload = async (file: File) => {
+  const handlePhotoPicked = async (items: MediaLibraryItem[]) => {
+    const url = items[0]?.secure_url;
+    if (!url) return;
     setPhotoUploading(true);
-    try { const u = await staffService.uploadPhoto(staff.id, file); setPhotoUrl(u.profile_image_url ?? ""); onStaffUpdated(u); qc.invalidateQueries({ queryKey: ["admin-staff"] }); enqueueSnackbar("Photo updated", { variant: "success" }); }
-    catch (err: any) { enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" }); }
+    try {
+      const u = await staffService.update(staff.id, { profile_image_url: url });
+      setPhotoUrl(u.profile_image_url ?? url);
+      onStaffUpdated({ ...staff, profile_image_url: url });
+      qc.invalidateQueries({ queryKey: ["admin-staff"] });
+      enqueueSnackbar("Photo updated", { variant: "success" });
+    } catch (err: any) { enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" }); }
     finally { setPhotoUploading(false); }
   };
   const handleDocUpload = async (file: File, docType: string) => {
@@ -634,15 +684,11 @@ function StaffUploadsModal({ staff, onClose, onStaffUpdated }: {
       </Box>
       <DialogContent sx={{ px: 3, py: 3 }}>
         {tab === 0 && (
-          <Box>
-            <input ref={photoInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }}
-              onChange={async e => { const f = e.target.files?.[0]; if (f) await handlePhotoUpload(f); e.target.value = ""; }} />
-            <Box sx={{ textAlign: "center" }}>
-              <Avatar src={photoUrl || undefined} sx={{ width: 140, height: 140, mx: "auto", mb: 2, border: "3px solid", borderColor: "divider" }}><Person sx={{ fontSize: 60 }} /></Avatar>
-              <Button variant="contained" startIcon={photoUploading ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />} onClick={() => photoInputRef.current?.click()} disabled={photoUploading} sx={{ bgcolor: "#059669", "&:hover": { bgcolor: "#047857" } }}>
-                {photoUploading ? "Uploading…" : photoUrl ? "Replace Photo" : "Upload Photo"}
-              </Button>
-            </Box>
+          <Box sx={{ textAlign: "center" }}>
+            <Avatar src={photoUrl || undefined} sx={{ width: 140, height: 140, mx: "auto", mb: 2, border: "3px solid", borderColor: "divider" }}><Person sx={{ fontSize: 60 }} /></Avatar>
+            <Button variant="contained" startIcon={photoUploading ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />} onClick={() => setPhotoPickerOpen(true)} disabled={photoUploading} sx={{ bgcolor: "#059669", "&:hover": { bgcolor: "#047857" } }}>
+              {photoUploading ? "Uploading…" : photoUrl ? "Replace Photo" : "Upload Photo"}
+            </Button>
           </Box>
         )}
         {tab === 1 && (
@@ -656,6 +702,17 @@ function StaffUploadsModal({ staff, onClose, onStaffUpdated }: {
         <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{documents.length} document{documents.length !== 1 ? "s" : ""} uploaded</Typography>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+      <MediaPicker
+        open={photoPickerOpen}
+        onClose={() => setPhotoPickerOpen(false)}
+        onSelect={handlePhotoPicked}
+        folder="waytero/users"
+        uploadFolder="waytero/users"
+        kind="image"
+        assetType="photo"
+        accept="image/jpeg,image/png,image/webp"
+        title="Upload profile photo"
+      />
     </Dialog>
   );
 }

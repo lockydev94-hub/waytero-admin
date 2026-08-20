@@ -36,6 +36,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import apiClient from "../../services/api";
 import { partnerService, AdminPartnerListItem } from "../../services/partner.service";
+import MediaPicker from "../../components/media/MediaPicker";
+import { MediaLibraryItem } from "../../services/media.service";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -506,20 +508,18 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
   const [docType, setDocType] = useState("");
   const [expiry, setExpiry] = useState("");
   const [refNumber, setRefNumber] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
+  const [pickedUrl, setPickedUrl] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   // Determine which "number" to show based on doc type selection
   const isLicense = docType === "DRIVING_LICENSE";
   const refLabel = DOCS_WITH_REF_NUMBER[docType] ?? null;
   const registeredLicenseNumber = driver.license_number ?? "";
 
-  const handleDrop = (e: React.DragEvent<HTMLElement>) => {
-    e.preventDefault();
-    setDragOver(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
+  const handlePicked = (items: MediaLibraryItem[]) => {
+    const url = items[0]?.secure_url ?? "";
+    if (url) setPickedUrl(url);
   };
 
   const handleDocTypeChange = (type: string) => {
@@ -528,51 +528,41 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
   };
 
   const handleUpload = async () => {
-    if (!docType || !file) {
+    if (!docType || !pickedUrl) {
       enqueueSnackbar("Select document type and file", { variant: "warning" });
       return;
     }
-    setUploading(true);
+    setSaving(true);
     try {
-      // Step 1: Upload file to Cloudinary via admin settings upload endpoint
-      const assetType = docType === "PHOTO" ? "photo" : "document";
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("asset_type", assetType);
-      const r = await apiClient.post<{ secure_url: string }>("/admin/settings/upload-media", fd, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const fileUrl = r.data.secure_url;
-
-      // Step 2: Save document record via admin driver documents endpoint (JSON body)
-      await driverAdminService.uploadDocument(driver.id, fileUrl, docType, expiry);
+      await driverAdminService.uploadDocument(driver.id, pickedUrl, docType, expiry);
 
       qc.invalidateQueries({ queryKey: ["admin-driver-detail", driver.id] });
       enqueueSnackbar(
         docType === "PHOTO" ? "Driver photo uploaded successfully" : "Document uploaded successfully",
         { variant: "success" }
       );
-      setDocType(""); setExpiry(""); setFile(null); setRefNumber("");
+      setDocType(""); setExpiry(""); setPickedUrl(""); setRefNumber("");
       onClose();
     } catch (err: any) {
       enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" });
     } finally {
-      setUploading(false);
+      setSaving(false);
     }
   };
 
   const handleClose = () => {
-    if (uploading) return;
-    setDocType(""); setExpiry(""); setFile(null); setRefNumber("");
+    if (saving) return;
+    setDocType(""); setExpiry(""); setPickedUrl(""); setRefNumber("");
     onClose();
   };
 
   const selectedMeta = docType ? DOC_META[docType] : null;
 
   return (
+    <>
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth
       PaperProps={{ sx: { borderRadius: 3, background: "linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)", overflow: "hidden" } }}>
-      {uploading && <LinearProgress sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }} />}
+      {saving && <LinearProgress sx={{ position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 }} />}
 
       <DialogTitle sx={{ pb: 0, pt: 2.5, px: 3 }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -668,41 +658,39 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
             />
           )}
 
-          {/* File drop zone */}
+          {/* File picker trigger — opens MediaPicker */}
           <Box
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={handleDrop}
+            onClick={() => setPickerOpen(true)}
             sx={{
               border: `2px dashed`,
-              borderColor: dragOver ? "#667eea" : file ? "success.main" : "rgba(255,255,255,0.15)",
+              borderColor: pickedUrl ? "success.main" : "rgba(255,255,255,0.15)",
               borderRadius: 3,
               p: 3,
               textAlign: "center",
               cursor: "pointer",
               transition: "all 0.2s",
-              background: dragOver ? "rgba(102,126,234,0.08)" : file ? "rgba(16,185,129,0.06)" : "rgba(255,255,255,0.02)",
+              background: pickedUrl ? "rgba(16,185,129,0.06)" : "rgba(255,255,255,0.02)",
               "&:hover": { borderColor: "#667eea", background: "rgba(102,126,234,0.06)" },
             }}
-            component="label"
           >
-            <input type="file" hidden accept="image/*,.pdf" onChange={e => setFile(e.target.files?.[0] ?? null)} />
-            {file ? (
+            {pickedUrl ? (
               <Stack alignItems="center" gap={1}>
                 <TaskAlt sx={{ color: "success.main", fontSize: 36 }} />
-                <Typography variant="body2" fontWeight={700} sx={{ color: "success.light" }}>{file.name}</Typography>
+                <Typography variant="body2" fontWeight={700} noWrap sx={{ color: "success.light", maxWidth: "100%" }}>
+                  {pickedUrl}
+                </Typography>
                 <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.3)" }}>
-                  {(file.size / 1024).toFixed(0)} KB · Click to change
+                  Click to choose a different file
                 </Typography>
               </Stack>
             ) : (
               <Stack alignItems="center" gap={1}>
                 <CloudUpload sx={{ color: "rgba(255,255,255,0.2)", fontSize: 40 }} />
                 <Typography variant="body2" fontWeight={600} sx={{ color: "rgba(255,255,255,0.5)" }}>
-                  Drop file here or click to browse
+                  Click to browse or pick from media library
                 </Typography>
                 <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.25)" }}>
-                  PDF, JPG, PNG · Max 10 MB
+                  PDF, JPG, PNG · uploaded to Cloudinary
                 </Typography>
               </Stack>
             )}
@@ -711,21 +699,34 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 3, pt: 2, gap: 1 }}>
-        <Button variant="outlined" onClick={handleClose} disabled={uploading}
+        <Button variant="outlined" onClick={handleClose} disabled={saving}
           sx={{ borderColor: "rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.6)", "&:hover": { borderColor: "rgba(255,255,255,0.4)" } }}>
           Cancel
         </Button>
         <Button
           variant="contained"
           onClick={handleUpload}
-          disabled={uploading || !docType || !file}
-          startIcon={uploading ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />}
+          disabled={saving || !docType || !pickedUrl}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />}
           sx={{ background: "linear-gradient(135deg, #667eea, #764ba2)", fontWeight: 700, px: 3, flexGrow: 1 }}
         >
-          {uploading ? "Uploading…" : "Upload Document"}
+          {saving ? "Uploading…" : "Upload Document"}
         </Button>
       </DialogActions>
     </Dialog>
+
+    <MediaPicker
+      open={pickerOpen}
+      onClose={() => setPickerOpen(false)}
+      onSelect={handlePicked}
+      folder="waytero/drivers"
+      uploadFolder="waytero/drivers"
+      kind="image"
+      assetType={docType === "PHOTO" ? "photo" : "document"}
+      accept={docType === "PHOTO" ? "image/*" : ".pdf,image/*"}
+      title="Choose driver document"
+    />
+    </>
   );
 }
 

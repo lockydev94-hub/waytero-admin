@@ -14,12 +14,12 @@
 //    • Clean formatting
 // ============================================================
 
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useTheme } from "@mui/material";
 import ReactQuill from "react-quill-new";
 import "react-quill-new/dist/quill.snow.css";
 
-import { uploadMedia } from "../../../services/settings.service";
+import MediaPicker from "../../../components/media/MediaPicker";
 
 interface RichTextEditorProps {
   value: string;
@@ -40,6 +40,8 @@ export default function RichTextEditor({
   // distinguish programmatic/external value changes from user input so that
   // loading a post from the API updates the editor without fighting typing.
   const lastEmittedRef = useRef<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const lastInsertedRef = useRef<string | null>(null);
 
   // Reflect external value changes (e.g. async-loaded post content) into the
   // editor. react-quill's controlled `value` prop is unreliable for values
@@ -59,31 +61,35 @@ export default function RichTextEditor({
     [onChange]
   );
 
-  const imageHandler = useCallback(() => {
-    const input = document.createElement("input");
-    input.setAttribute("type", "file");
-    input.setAttribute("accept", "image/*");
-    input.click();
-
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-
-      try {
-        const result = await uploadMedia(file, "general", {
-          folderOverride: "waytero/blog",
-        });
-        const quill = quillRef.current?.getEditor();
-        if (quill) {
-          const range = quill.getSelection(true);
-          quill.insertEmbed(range.index, "image", result.secure_url);
-          quill.setSelection(range.index + 1);
-        }
-      } catch {
-        // Silently fail — the user can retry
-      }
-    };
+  const insertImage = useCallback((url: string) => {
+    if (lastInsertedRef.current === url) return;
+    lastInsertedRef.current = url;
+    const quill = quillRef.current?.getEditor();
+    if (!quill) return;
+    const range = quill.getSelection(true);
+    quill.insertEmbed(range.index, "image", url);
+    quill.setSelection(range.index + 1);
   }, []);
+
+  const imageHandler = useCallback(() => {
+    setPickerOpen(true);
+  }, []);
+
+  const handlePicked = useCallback(
+    (items: { secure_url: string }[]) => {
+      const url = items[0]?.secure_url;
+      if (!url) return;
+      insertImage(url);
+    },
+    [insertImage]
+  );
+
+  const handleUploaded = useCallback(
+    (result: { secure_url: string }) => {
+      insertImage(result.secure_url);
+    },
+    [insertImage]
+  );
 
   const modules = useMemo(
     () => ({
@@ -191,6 +197,18 @@ export default function RichTextEditor({
         modules={modules}
         formats={formats}
         placeholder={placeholder}
+      />
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => {
+          lastInsertedRef.current = null;
+          setPickerOpen(false);
+        }}
+        onSelect={handlePicked}
+        onUploaded={handleUploaded}
+        folder="waytero/blog"
+        uploadFolder="waytero/blog"
+        title="Insert image"
       />
     </div>
   );

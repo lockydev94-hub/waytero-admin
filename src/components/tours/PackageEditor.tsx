@@ -5,11 +5,11 @@
 // fields and only the final Review step allows saving.
 // Doc Ref: BRD_PART_5_TOUR_PACKAGE_MANAGEMENT §2-§4
 // ============================================================
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box, Typography, Stack, Stepper, Step, StepLabel, Grid, TextField, MenuItem,
   Button, IconButton, Divider, Card, CardContent, Chip, Alert, Tooltip, Avatar,
-  Switch, FormControlLabel, InputAdornment, CircularProgress,
+  Switch, FormControlLabel, InputAdornment,
 } from "@mui/material";
 import {
   Add, Delete, ArrowBack, ArrowForward, CheckCircle, LocationOn,
@@ -20,7 +20,8 @@ import {
   CloudUpload,
 } from "@mui/icons-material";
 import { tourService, TourPackage } from "../../services/tour.service";
-import { uploadMedia } from "../../services/settings.service";
+import MediaPicker from "../media/MediaPicker";
+import type { MediaLibraryItem } from "../../services/media.service";
 
 const PACKAGE_TYPES = [
   { value: "FIXED", label: "Fixed Departure", icon: <Schedule /> },
@@ -138,9 +139,7 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -218,6 +217,10 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
     return { ...s, media: next };
   });
   const setPrimary = (idx: number) => setForm((s: any) => ({ ...s, media: s.media.map((m: any, i: number) => ({ ...m, is_primary: i === idx })) }));
+  const handlePicked = (items: MediaLibraryItem[]) => {
+    if (!items.length) return;
+    items.forEach((item) => addMedia(item.secure_url, ""));
+  };
 
   // ── Save ─────────────────────────────────────────────────────
   const buildPayload = (submitForReview: boolean) => ({
@@ -512,47 +515,11 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
             </Box>
           </Stack>
 
-          {/* Local file upload — routes through the shared /admin/settings/upload-media transport */}
           <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-            <Button
-              variant="contained"
-              startIcon={uploading ? <CircularProgress size={16} color="inherit" /> : <CloudUpload />}
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? "Uploading…" : "Upload from device"}
+            <Button variant="contained" startIcon={<CloudUpload />} onClick={() => setPickerOpen(true)}>
+              Upload from device
             </Button>
-            <input
-              ref={fileInputRef}
-              hidden
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={async (e) => {
-                const files = Array.from(e.target.files ?? []);
-                e.target.value = "";
-                if (!files.length) return;
-                setUploadError(null);
-                setUploading(true);
-                let ok = 0;
-                try {
-                  for (const file of files) {
-                    try {
-                      const result = await uploadMedia(file, "general", { folderOverride: "waytero/tours" });
-                      addMedia(result.secure_url, "");
-                      ok += 1;
-                    } catch (err: any) {
-                      setUploadError(err?.response?.data?.detail ?? `${file.name} failed to upload`);
-                    }
-                  }
-                  if (ok > 0) setUploadError(null);
-                } finally {
-                  setUploading(false);
-                }
-              }}
-            />
           </Stack>
-          {uploadError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setUploadError(null)}>{uploadError}</Alert>}
 
           <Stack direction="row" spacing={1} sx={{ mb: 2 }} alignItems="center">
             <Typography variant="caption" color="text.secondary" sx={{ flexShrink: 0 }}>or add by URL:</Typography>
@@ -657,6 +624,18 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
           )}
         </Stack>
       </Stack>
+
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={handlePicked}
+        folder="waytero/tours"
+        uploadFolder="waytero/tours"
+        kind="image"
+        assetType="general"
+        multiple
+        title="Upload package images"
+      />
     </Box>
   );
 }

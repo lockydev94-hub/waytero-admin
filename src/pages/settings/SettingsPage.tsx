@@ -27,6 +27,7 @@ import {
 } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 import { settingsService, uploadMedia, MediaUploadResult, SystemConfig, ApiIntegration, CommissionGroup, AppVersion, NotificationTemplate, City, VehicleCategory, VehiclePricingRule, State, SERVICE_TYPES, DefaultPricingRule, TRIP_TYPES, ServiceTypeRecord } from "../../services/settings.service";
+import MediaPicker from "../../components/media/MediaPicker";
 import { hotelService } from "../../services/hotel.service";
 import EmailSettingsTab from "./EmailSettingsTab";
 
@@ -333,28 +334,12 @@ function MediaUploadCard({
   onSaved: (url: string) => void;
   enqueueSnackbar: any;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [cropOpen, setCropOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    setPendingFile(f);
-    setCropOpen(true);
-    e.target.value = "";
-  };
-
-  const onCropped = async (blob: Blob) => {
-    setCropOpen(false);
-    setUploading(true);
+  const persistUrl = async (url: string) => {
+    setSaving(true);
     try {
-      const croppedFile = new File([blob], `${assetType}.png`, { type: "image/png" });
-      const result: MediaUploadResult = await uploadMedia(croppedFile, assetType);
-      const url = result.secure_url;
-      setSaving(true);
       await settingsService.upsertConfiguration(configKey, url);
       enqueueSnackbar(`${label} uploaded successfully`, { variant: "success" });
       onSaved(url);
@@ -364,13 +349,16 @@ function MediaUploadCard({
         { variant: "error" }
       );
     } finally {
-      setUploading(false);
       setSaving(false);
-      setPendingFile(null);
     }
   };
 
-  const isBusy = uploading || saving;
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    const first = items[0];
+    if (first) void persistUrl(first.secure_url);
+  };
+
+  const isBusy = saving;
 
   return (
     <>
@@ -430,7 +418,7 @@ function MediaUploadCard({
             }}>
               <CircularProgress size={28} />
               <Typography variant="caption" color="text.secondary">
-                {uploading ? "Uploading to Cloudinary…" : "Saving…"}
+                {isBusy ? "Uploading to Cloudinary…" : "Saving…"}
               </Typography>
             </Box>
           )}
@@ -479,18 +467,11 @@ function MediaUploadCard({
             </Box>
           )}
 
-          <input
-            ref={fileRef}
-            type="file"
-            hidden
-            accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp,image/x-icon"
-            onChange={onFileChange}
-          />
           <Button
             fullWidth
             variant={currentUrl ? "outlined" : "contained"}
             startIcon={isBusy ? <CircularProgress size={14} color="inherit" /> : <CloudUpload />}
-            onClick={() => fileRef.current?.click()}
+            onClick={() => setPickerOpen(true)}
             disabled={isBusy}
             sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
           >
@@ -499,18 +480,31 @@ function MediaUploadCard({
         </CardContent>
       </Card>
 
-      {pendingFile && (
-        <CropModal
-          open={cropOpen}
-          file={pendingFile}
+      {pickerOpen && (
+        <MediaPicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={onPickerSelect}
+          folder="waytero/platform"
+          uploadFolder="waytero/platform"
           assetType={assetType}
-          onClose={() => { setCropOpen(false); setPendingFile(null); }}
-          onCropped={onCropped}
+          crop={{
+            presets: [{ label: "Fixed", ratio: ASSET_SPECS[assetType].ratio }],
+            outputWidth: ASSET_SPECS[assetType].w,
+            outputHeight: ASSET_SPECS[assetType].h,
+          }}
+          title={`Upload ${label}`}
         />
       )}
     </>
   );
 }
+
+const ASSET_SPECS: Record<string, { w: number; h: number; ratio: number }> = {
+  logo:     { w: 400, h: 120, ratio: 400 / 120 },
+  favicon:  { w: 32,  h: 32,  ratio: 1 },
+  og_image: { w: 1200, h: 630, ratio: 1200 / 630 },
+};
 
 // ── OfficeAddressCard ──────────────────────────────────────────
 function OfficeAddressCard({
@@ -3951,9 +3945,7 @@ function VehicleCategoryDialog({
   const [cropMode, setCropMode]   = useState<"image" | "icon">("image");
   const [cropOpen, setCropOpen]   = useState(false);
   const [uploading, setUploading] = useState<"image" | "icon" | null>(null);
-
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const iconInputRef  = useRef<HTMLInputElement>(null);
+  const [pickerMode, setPickerMode] = useState<"image" | "icon" | null>(null);
 
   useEffect(() => {
     if (category) {
@@ -3976,10 +3968,17 @@ function VehicleCategoryDialog({
     setActiveSection(0);
   }, [category, open]);
 
-  const handleImageFile = (file: File, mode: "image" | "icon") => {
-    setCropFile(file);
-    setCropMode(mode);
-    setCropOpen(true);
+  const openPicker = (mode: "image" | "icon") => {
+    setPickerMode(mode);
+  };
+
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    const first = items[0];
+    if (first) {
+      if (pickerMode === "image") setImageUrl(first.secure_url);
+      else if (pickerMode === "icon") setIconUrl(first.secure_url);
+      enqueueSnackbar(`Category ${pickerMode} uploaded`, { variant: "success" });
+    }
   };
 
   const handleCropped = async (blob: Blob) => {
@@ -4178,7 +4177,7 @@ function VehicleCategoryDialog({
                     </Box>
                     <Stack direction="row" gap={1}>
                       <Button size="small" variant="outlined" startIcon={<CloudUpload sx={{ fontSize: 14 }} />}
-                        onClick={() => imageInputRef.current?.click()}
+                        onClick={() => openPicker("image")}
                         disabled={!!uploading}
                         sx={{ textTransform: "none", borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", "&:hover": { borderColor: "#667eea", color: "#a5b4fc" } }}>
                         Replace Image
@@ -4192,7 +4191,7 @@ function VehicleCategoryDialog({
                   </Stack>
                 ) : (
                   <Box
-                    onClick={() => imageInputRef.current?.click()}
+                    onClick={() => openPicker("image")}
                     sx={{
                       width: "100%", height: 160,
                       border: "2px dashed rgba(102,126,234,0.3)", borderRadius: 2,
@@ -4212,8 +4211,6 @@ function VehicleCategoryDialog({
                     )}
                   </Box>
                 )}
-                <input ref={imageInputRef} type="file" hidden accept="image/*"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f, "image"); e.target.value = ""; }} />
               </Paper>
 
               {/* Icon */}
@@ -4248,7 +4245,7 @@ function VehicleCategoryDialog({
                     {iconUrl ? (
                       <Stack direction="row" gap={1}>
                         <Button size="small" variant="outlined" startIcon={<CloudUpload sx={{ fontSize: 14 }} />}
-                          onClick={() => iconInputRef.current?.click()} disabled={!!uploading}
+                          onClick={() => openPicker("icon")} disabled={!!uploading}
                           sx={{ textTransform: "none", borderColor: "rgba(167,139,250,0.3)", color: "rgba(167,139,250,0.7)", "&:hover": { borderColor: "#a78bfa", color: "#c4b5fd" } }}>
                           Replace Icon
                         </Button>
@@ -4260,7 +4257,7 @@ function VehicleCategoryDialog({
                       </Stack>
                     ) : (
                       <Button variant="outlined" startIcon={uploading === "icon" ? <CircularProgress size={14} sx={{ color: "#a78bfa" }} /> : <CloudUpload sx={{ fontSize: 15 }} />}
-                        onClick={() => iconInputRef.current?.click()} disabled={!!uploading}
+                        onClick={() => openPicker("icon")} disabled={!!uploading}
                         sx={{ textTransform: "none", borderColor: "rgba(167,139,250,0.3)", color: "rgba(167,139,250,0.7)", alignSelf: "flex-start",
                           "&:hover": { borderColor: "#a78bfa", bgcolor: "rgba(167,139,250,0.08)" } }}>
                         {uploading === "icon" ? "Uploading…" : "Upload Icon"}
@@ -4271,8 +4268,6 @@ function VehicleCategoryDialog({
                     </Typography>
                   </Stack>
                 </Stack>
-                <input ref={iconInputRef} type="file" hidden accept="image/*"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f, "icon"); e.target.value = ""; }} />
               </Paper>
             </Stack>
           )}
@@ -4398,6 +4393,24 @@ function VehicleCategoryDialog({
         onClose={() => { setCropOpen(false); setCropFile(null); }}
         onCropped={handleCropped}
       />
+
+      {/* Media picker */}
+      {pickerMode && (
+        <MediaPicker
+          open
+          onClose={() => setPickerMode(null)}
+          onSelect={onPickerSelect}
+          folder={`vehicle-categories/${pickerMode}`}
+          uploadFolder={`vehicle-categories/${pickerMode}`}
+          assetType="general"
+          crop={{
+            presets: [{ label: "Fixed", ratio: pickerMode === "image" ? 1200 / 675 : 1 }],
+            outputWidth: pickerMode === "image" ? 1200 : 200,
+            outputHeight: pickerMode === "image" ? 675 : 200,
+          }}
+          title={`Upload category ${pickerMode}`}
+        />
+      )}
     </>
   );
 }
@@ -4560,9 +4573,18 @@ function ServiceTypeDialog({
   const [cropMode, setCropMode]   = useState<"image" | "icon">("image");
   const [cropOpen, setCropOpen]   = useState(false);
   const [uploading, setUploading] = useState<"image" | "icon" | null>(null);
+  const [pickerMode, setPickerMode] = useState<"image" | "icon" | null>(null);
 
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const iconInputRef  = useRef<HTMLInputElement>(null);
+  const openPicker = (mode: "image" | "icon") => setPickerMode(mode);
+
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    const first = items[0];
+    if (first) {
+      if (pickerMode === "image") setImageUrl(first.secure_url);
+      else if (pickerMode === "icon") setIconUrl(first.secure_url);
+      enqueueSnackbar(`Service type ${pickerMode} uploaded`, { variant: "success" });
+    }
+  };
 
   useEffect(() => {
     if (serviceType) {
@@ -4580,10 +4602,6 @@ function ServiceTypeDialog({
     }
     setActiveSection(0);
   }, [serviceType, open]);
-
-  const handleImageFile = (file: File, mode: "image" | "icon") => {
-    setCropFile(file); setCropMode(mode); setCropOpen(true);
-  };
 
   const handleCropped = async (blob: Blob) => {
     setCropOpen(false);
@@ -4806,7 +4824,7 @@ function ServiceTypeDialog({
                     </Box>
                     <Stack direction="row" gap={1}>
                       <Button size="small" variant="outlined" startIcon={<CloudUpload sx={{ fontSize: 14 }} />}
-                        onClick={() => imageInputRef.current?.click()} disabled={!!uploading}
+                        onClick={() => openPicker("image")} disabled={!!uploading}
                         sx={{ textTransform: "none", borderColor: "rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", "&:hover": { borderColor: accent, color: accent } }}>
                         Replace Image
                       </Button>
@@ -4818,7 +4836,7 @@ function ServiceTypeDialog({
                     </Stack>
                   </Stack>
                 ) : (
-                  <Box onClick={() => imageInputRef.current?.click()}
+                  <Box onClick={() => openPicker("image")}
                     sx={{
                       width: "100%", height: 160,
                       border: `2px dashed ${accent}30`, borderRadius: 2,
@@ -4837,8 +4855,6 @@ function ServiceTypeDialog({
                     )}
                   </Box>
                 )}
-                <input ref={imageInputRef} type="file" hidden accept="image/*"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f, "image"); e.target.value = ""; }} />
               </Paper>
 
               {/* Icon */}
@@ -4872,7 +4888,7 @@ function ServiceTypeDialog({
                     {iconUrl ? (
                       <Stack direction="row" gap={1}>
                         <Button size="small" variant="outlined" startIcon={<CloudUpload sx={{ fontSize: 14 }} />}
-                          onClick={() => iconInputRef.current?.click()} disabled={!!uploading}
+                          onClick={() => openPicker("icon")} disabled={!!uploading}
                           sx={{ textTransform: "none", borderColor: "rgba(167,139,250,0.3)", color: "rgba(167,139,250,0.7)", "&:hover": { borderColor: "#a78bfa", color: "#c4b5fd" } }}>
                           Replace Icon
                         </Button>
@@ -4885,7 +4901,7 @@ function ServiceTypeDialog({
                     ) : (
                       <Button variant="outlined"
                         startIcon={uploading === "icon" ? <CircularProgress size={14} sx={{ color: "#a78bfa" }} /> : <CloudUpload sx={{ fontSize: 15 }} />}
-                        onClick={() => iconInputRef.current?.click()} disabled={!!uploading}
+                        onClick={() => openPicker("icon")} disabled={!!uploading}
                         sx={{ textTransform: "none", borderColor: "rgba(167,139,250,0.3)", color: "rgba(167,139,250,0.7)", alignSelf: "flex-start",
                           "&:hover": { borderColor: "#a78bfa", bgcolor: "rgba(167,139,250,0.08)" } }}>
                         {uploading === "icon" ? "Uploading…" : "Upload Icon"}
@@ -4896,8 +4912,6 @@ function ServiceTypeDialog({
                     </Typography>
                   </Stack>
                 </Stack>
-                <input ref={iconInputRef} type="file" hidden accept="image/*"
-                  onChange={e => { const f = e.target.files?.[0]; if (f) handleImageFile(f, "icon"); e.target.value = ""; }} />
               </Paper>
             </Stack>
           )}
@@ -5017,6 +5031,24 @@ function ServiceTypeDialog({
         onClose={() => { setCropOpen(false); setCropFile(null); }}
         onCropped={handleCropped}
       />
+
+      {/* Media picker */}
+      {pickerMode && (
+        <MediaPicker
+          open
+          onClose={() => setPickerMode(null)}
+          onSelect={onPickerSelect}
+          folder={`service-types/${serviceType?.type_code?.toLowerCase() ?? "service"}/${pickerMode}`}
+          uploadFolder={`service-types/${serviceType?.type_code?.toLowerCase() ?? "service"}/${pickerMode}`}
+          assetType="general"
+          crop={{
+            presets: [{ label: "Fixed", ratio: pickerMode === "image" ? 1200 / 675 : 1 }],
+            outputWidth: pickerMode === "image" ? 1200 : 200,
+            outputHeight: pickerMode === "image" ? 675 : 200,
+          }}
+          title={`Upload service ${pickerMode}`}
+        />
+      )}
     </>
   );
 }

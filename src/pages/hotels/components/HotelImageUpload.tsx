@@ -2,16 +2,19 @@
 // WAYTERO ADMIN — HOTEL IMAGE UPLOAD
 // Doc Ref: 03_FRONTEND_DESIGN.md §5 (Media), §7
 //
-// Adapted from VehiclesPage CloudinaryFileUpload. Multi-file: hotels are
-// photographed in batches, and uploading one at a time is friction for nothing.
-// Uses the shared /admin/settings/upload-media transport — no second endpoint.
+// Multi-file image upload for hotels. Hotels are photographed in
+// batches, so this opens the shared MediaPicker modal in multi-select
+// mode — the admin can pick from the Cloudinary gallery and/or upload
+// new images (with an optional crop step) in one pass. Each confirmed
+// image is streamed to the caller via onUploaded.
 // ============================================================
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Box, LinearProgress, Stack, Typography, alpha, useTheme } from "@mui/material";
 import { CloudUpload } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 import { uploadMedia } from "../../../services/settings.service";
 import { apiErrorMessage } from "../../../utils/apiError";
+import MediaPicker from "../../../components/media/MediaPicker";
 
 interface Props {
   /** Cloudinary folder — see HOTEL_UPLOAD_FOLDERS. */
@@ -38,12 +41,29 @@ export default function HotelImageUpload({
 }: Props) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [progress, setProgress] = useState(0);
+
+  const uploadFile = async (file: File) => {
+    try {
+      const result = await uploadMedia(file, assetType, {
+        folderOverride: folder,
+        onProgress: setProgress,
+      });
+      await onUploaded(result.secure_url, file);
+      return true;
+    } catch (err: any) {
+      enqueueSnackbar(
+        apiErrorMessage(err, `${file.name} failed to upload`),
+        { variant: "error" }
+      );
+      return false;
+    }
+  };
 
   const handleFiles = async (files: File[]) => {
     if (!files.length) return;
@@ -52,23 +72,8 @@ export default function HotelImageUpload({
     setDone(0);
     let ok = 0;
     for (let i = 0; i < files.length; i += 1) {
-      const file = files[i];
       setProgress(0);
-      try {
-        const result = await uploadMedia(file, assetType, {
-          folderOverride: folder,
-          onProgress: setProgress,
-        });
-        await onUploaded(result.secure_url, file);
-        ok += 1;
-      } catch (err: any) {
-        // Report per file and keep going — one bad file should not discard
-        // the rest of a batch the admin already selected.
-        enqueueSnackbar(
-          apiErrorMessage(err, `${file.name} failed to upload`),
-          { variant: "error" }
-        );
-      }
+      if (await uploadFile(files[i])) ok += 1;
       setDone(i + 1);
     }
     if (ok > 0) {
@@ -78,29 +83,33 @@ export default function HotelImageUpload({
     setTotal(0);
     setDone(0);
     setProgress(0);
-    if (fileRef.current) fileRef.current.value = "";
   };
 
-  const pick = (list: FileList | null) => handleFiles(Array.from(list ?? []));
+  const onPickerSelect = (items: { secure_url: string }[]) => {
+    // Gallery picks are already in Cloudinary — emit the URL directly.
+    items.forEach((item) => {
+      void onUploaded(item.secure_url, new File([], "gallery.jpg", { type: "image/jpeg" }));
+    });
+  };
+
+  const onPickerUploaded = async (result: { secure_url: string }, file: File) => {
+    await onUploaded(result.secure_url, file);
+  };
+
+  const openPicker = () => {
+    if (disabled || busy) return;
+    setPickerOpen(true);
+  };
 
   return (
     <Box>
-      <input
-        ref={fileRef}
-        type="file"
-        accept={accept}
-        multiple={multiple}
-        style={{ display: "none" }}
-        onChange={(e) => pick(e.target.files)}
-      />
-
       <Box
         role="button"
         tabIndex={disabled ? -1 : 0}
         aria-label={label}
-        onClick={() => !busy && !disabled && fileRef.current?.click()}
+        onClick={openPicker}
         onKeyDown={(e) => {
-          if ((e.key === "Enter" || e.key === " ") && !busy && !disabled) fileRef.current?.click();
+          if ((e.key === "Enter" || e.key === " ") && !disabled && !busy) openPicker();
         }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -110,7 +119,7 @@ export default function HotelImageUpload({
         onDrop={(e) => {
           e.preventDefault();
           setDragOver(false);
-          if (!disabled && !busy) pick(e.dataTransfer.files);
+          if (!disabled && !busy) handleFiles(Array.from(e.dataTransfer.files ?? []));
         }}
         sx={{
           border: `2px dashed ${
@@ -143,6 +152,25 @@ export default function HotelImageUpload({
           />
         )}
       </Box>
+
+      {pickerOpen && (
+        <MediaPicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSelect={onPickerSelect}
+          onUploaded={onPickerUploaded}
+          folder={folder}
+          uploadFolder={folder}
+          assetType={assetType}
+          accept={accept}
+          multiple
+          crop={{
+            presets: [{ label: "Free", ratio: null }],
+            outputSizes: [0, 1024, 1600, 2048],
+          }}
+          title="Add hotel images"
+        />
+      )}
     </Box>
   );
 }
