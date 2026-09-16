@@ -183,6 +183,9 @@ export const tourService = {
     apiClient.get<TourPackage>(`/admin/tours/packages/${id}`).then(r => r.data),
   createPackage: (data: any) =>
     apiClient.post<TourPackage>("/admin/tours/packages", data).then(r => r.data),
+  /** POST /admin/tours/partners/{id}/enable-tour-service — grant TOUR before wizard save (mirrors hotel flow). */
+  enableTourService: (partner_id: number) =>
+    apiClient.post(`/admin/tours/partners/${partner_id}/enable-tour-service`).then(r => r.data),
   updatePackage: (id: number, data: any) =>
     apiClient.patch<TourPackage>(`/admin/tours/packages/${id}`, data).then(r => r.data),
   setPackageStatus: (id: number, status: string, rejection_reason?: string) =>

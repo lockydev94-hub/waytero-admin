@@ -20,6 +20,7 @@ import {
   CloudUpload,
 } from "@mui/icons-material";
 import { tourService, TourPackage } from "../../services/tour.service";
+import { apiErrorMessage } from "../../utils/apiError";
 import MediaPicker from "../media/MediaPicker";
 import type { MediaLibraryItem } from "../../services/media.service";
 
@@ -265,6 +266,10 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
     }
     setSaving(true);
     try {
+      // Mirror the hotel wizard: make sure the selected partner has the TOUR
+      // service enabled before saving. Idempotent + additive on the backend,
+      // so this is safe to call on every save.
+      await tourService.enableTourService(Number(form.partner_id));
       const payload = buildPayload(submitForReview);
       let saved: TourPackage;
       if (isEdit) saved = await tourService.updatePackage(initial!.id, payload);
@@ -275,7 +280,9 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
       setSuccess(true);
       setTimeout(() => onSaved(), 800);
     } catch (e: any) {
-      setError(e?.response?.data?.message ?? e?.response?.data?.detail ?? "Could not save this package");
+      // apiErrorMessage renders FastAPI 422 detail arrays ("field: message")
+      // and the WayTero envelope — a bare fallback hides the actual reason.
+      setError(apiErrorMessage(e, "Could not save this package"));
     } finally {
       setSaving(false);
     }
