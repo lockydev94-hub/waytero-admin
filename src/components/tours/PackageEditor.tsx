@@ -17,11 +17,14 @@ import {
   Schedule, AttachMoney, LocalActivity, Bookmark, Star, Hotel, Flight,
   Restaurant, DirectionsBus, CameraAlt, Museum, BeachAccess, Hiking,
   Groups, Verified, Save, Send, Description, ListAlt, StarBorder, StarRate,
-  CloudUpload,
+  CloudUpload, Search,
 } from "@mui/icons-material";
 import { tourService, TourPackage } from "../../services/tour.service";
 import { apiErrorMessage } from "../../utils/apiError";
 import MediaPicker from "../media/MediaPicker";
+import SeoFields from "../forms/SeoFields";
+import { seoHasError, slugify } from "../../utils/seoValidation";
+import type { SeoValues } from "../../utils/seoValidation";
 import type { MediaLibraryItem } from "../../services/media.service";
 
 const PACKAGE_TYPES = [
@@ -38,6 +41,7 @@ const STEPS = [
   { key: "inclusions", label: "Inclusions", icon: <CheckCircle /> },
   { key: "pricing", label: "Pricing", icon: <AttachMoney /> },
   { key: "media", label: "Media", icon: <ImageIcon /> },
+  { key: "seo", label: "SEO", icon: <Search /> },
   { key: "review", label: "Review", icon: <Visibility /> },
 ];
 
@@ -105,6 +109,10 @@ const blankForm = () => ({
   exclusions: [] as string[],
   pricing: [] as Array<{ persons_count: number; package_price: number; effective_from: string; effective_to: string }>,
   media: [] as Array<{ media_url: string; caption: string; is_primary: boolean }>,
+  slug: "",
+  seo_title: "",
+  seo_description: "",
+  seo_keywords: "",
 });
 
 function fromPackage(p: TourPackage) {
@@ -131,6 +139,10 @@ function fromPackage(p: TourPackage) {
       effective_from: x.effective_from || "", effective_to: x.effective_to || "",
     })),
     media: (p.media || []).map(m => ({ media_url: m.media_url, caption: m.caption || "", is_primary: !!m.is_primary })),
+    slug: p.slug || "",
+    seo_title: p.seo_title || "",
+    seo_description: p.seo_description || "",
+    seo_keywords: p.seo_keywords || "",
   };
 }
 
@@ -152,7 +164,15 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
   }, [open, initial]);
 
   const update = (k: string, v: any) => setForm((s: any) => ({ ...s, [k]: v }));
+  const updateSeo = (patch: Partial<SeoValues>) => setForm((s: any) => ({ ...s, ...patch }));
   const isEdit = !!initial;
+
+  const seoValues: SeoValues = {
+    slug: form.slug ?? "",
+    seo_title: form.seo_title ?? "",
+    seo_description: form.seo_description ?? "",
+    seo_keywords: form.seo_keywords ?? "",
+  };
 
   // ── Step validation ───────────────────────────────────────────
   const stepValid = useMemo(() => {
@@ -179,6 +199,9 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
     if (step === 4) {
       if (form.media.length === 0) return "Add at least one image (mark one as primary)";
       if (!form.media.some((m: any) => m.is_primary)) return "Mark one image as primary";
+    }
+    if (step === 5) {
+      if (seoHasError(seoValues)) return "SEO fields are invalid — fix the errors before continuing";
     }
     return null;
   }, [step, form]);
@@ -249,11 +272,20 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
     media: form.media.map((m: any, i: number) => ({
       media_url: m.media_url, caption: m.caption || null, is_primary: m.is_primary, display_order: i, media_type: "IMAGE",
     })),
+    slug: seoValues.slug || null,
+    seo_title: form.seo_title.trim() || null,
+    seo_description: form.seo_description.trim() || null,
+    seo_keywords: form.seo_keywords.trim() || null,
     ...(submitForReview ? { status: "PENDING_APPROVAL" } : {}),
   });
 
   const save = async (submitForReview = false) => {
     setError(null);
+    if (seoHasError(seoValues)) {
+      setStep(5);
+      setError("SEO fields are invalid — the backend will reject this package.");
+      return;
+    }
     // Walk all step validations to make sure nothing is missed.
     for (let i = 0; i <= 4; i++) {
       const v = [null,
@@ -563,8 +595,30 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
         </Box>
       )}
 
-      {/* ── Step 6: Review ────────────────────────────────────── */}
+      {/* ── Step 6: SEO ───────────────────────────────────────── */}
       {step === 5 && (
+        <Box>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="subtitle1" fontWeight={800}>Search engine listing</Typography>
+            <Typography variant="body2" color="text.secondary">
+              What travellers see on Google. Leave title/description empty to fall back to the
+              package name and short description on the website.
+            </Typography>
+          </Box>
+          <SeoFields
+            value={seoValues}
+            onChange={updateSeo}
+            urlBase="waytero.com/tours/"
+            fallbackTitle={form.package_name}
+            fallbackDescription={form.short_description}
+            liveEntity={isEdit && initial?.status === "ACTIVE"}
+            originalSlug={initial?.slug}
+          />
+        </Box>
+      )}
+
+      {/* ── Step 7: Review ────────────────────────────────────── */}
+      {step === 6 && (
         <Box>
           <Card variant="outlined" sx={{ borderRadius: 2, mb: 2, overflow: "hidden" }}>
             {form.media.find((m: any) => m.is_primary) && (

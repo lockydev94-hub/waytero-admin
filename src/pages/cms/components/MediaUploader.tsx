@@ -23,6 +23,7 @@ import { CloudUpload, Close } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 
 import MediaPicker from "../../../components/media/MediaPicker";
+import type { MediaLibraryItem } from "../../../services/media.service";
 import { uploadMedia } from "../../../services/settings.service";
 import { apiErrorMessage } from "../../../utils/apiError";
 import { OutputFormat } from "./ImageCropper";
@@ -45,6 +46,82 @@ export interface CropSpec {
   quality?: number;
 }
 
+/**
+ * Geometry a slot enforces when `strict` is on. Normally you do not hand-write
+ * this — it comes from the backend `slot_specs`, which is also what the crop
+ * modal and the website layout are built against, so all three agree by
+ * construction.
+ */
+export interface SlotGeometry {
+  minWidth: number;
+  minHeight: number;
+  /** Target aspect ratio (width / height). */
+  aspect: number;
+  /** Exact output the crop step produces; used for the hint text. */
+  width?: number;
+  height?: number;
+}
+
+/**
+ * Aspect is compared with relative tolerance, not equality: Cloudinary reports
+ * 1920×800 for the slot and 1919×800 for a re-encode, and rejecting the second
+ * one teaches admins to stop trusting the uploader.
+ */
+const ASPECT_TOLERANCE = 0.06;
+
+/**
+ * Natural pixel size of a raster file. `null` means the browser could not
+ * decode it — which is treated as "cannot verify", not "invalid", so an exotic
+ * format never locks the admin out of a slot it may well fit.
+ */
+async function readImageSize(
+  file: File
+): Promise<{ width: number | null; height: number | null } | null> {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const size = { width: bitmap.width, height: bitmap.height };
+    bitmap.close();
+    return size;
+  } catch {
+    return null;
+  }
+}
+
+export function geometryProblem(
+  item: Pick<MediaLibraryItem, "width" | "height">,
+  slot: SlotGeometry,
+  label: string
+): string | null {
+  const { width, height } = item;
+  if (!width || !height) {
+    return `${label}: Cloudinary has no stored dimensions for this asset. Upload the file again so it goes through the crop step.`;
+  }
+  const problems: string[] = [];
+  if (width < slot.minWidth || height < slot.minHeight) {
+    problems.push(
+      `it is ${width}×${height} and this slot needs at least ${slot.minWidth}×${slot.minHeight}`
+    );
+  }
+  const ratio = width / height;
+  if (Math.abs(ratio - slot.aspect) / slot.aspect > ASPECT_TOLERANCE) {
+    problems.push(`its ratio is ${ratio.toFixed(2)}:1, this slot is ${slot.aspect}:1`);
+  }
+  if (!problems.length) return null;
+  return `${label}: ${problems.join("; ")}. Crop it to size, or pick a larger file.`;
+}
+
+/**
+ * The crop the upload modal should force for a slot, so an upload lands at the
+ * exact geometry the website's container is built for.
+ */
+export function cropForSlot(geometry: SlotGeometry): CropSpec {
+  return {
+    aspectRatio: geometry.aspect,
+    outputWidth: geometry.width ?? geometry.minWidth,
+    outputHeight: geometry.height ?? geometry.minHeight,
+  };
+}
+
 interface Props {
   /** Current URL — used to render preview and to support clear. */
   value: string | null;
@@ -65,6 +142,16 @@ interface Props {
    * after the file is picked. SVG / video / logo (when SVG) skip the crop.
    */
   crop?: CropSpec;
+  /**
+   * Reject gallery picks that cannot fill the slot instead of accepting them
+   * silently. A cropped upload always satisfies it — the check only bites on
+   * an existing library asset chosen as-is, which is exactly how a stretched
+   * or letterboxed hero reaches production. Default false so blog/CMS/hotel
+   * behaviour is untouched.
+   */
+  strict?: boolean;
+  /** Geometry `strict` enforces. Falls back to `crop` output size. */
+  slot?: SlotGeometry;
 }
 
 const ASSET_TYPE_FOR: Record<CmsMediaKind, "logo" | "general"> = {
@@ -93,6 +180,8 @@ export default function MediaUploader({
   previewHeight = 140,
   disabled,
   crop,
+  strict,
+  slot,
 }: Props) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
@@ -103,7 +192,32 @@ export default function MediaUploader({
 
   const isVideo = kind === "video";
 
+  // A slot without an explicit geometry still has one: whatever the crop step
+  // is configured to output. Keeping that here means a caller sets `strict`
+  // and gets the same number in the modal and in the rejection message.
+  const geometry = useMemo<SlotGeometry | undefined>(() => {
+    if (slot) return slot;
+    if (!crop) return undefined;
+    return {
+      minWidth: crop.outputWidth,
+      minHeight: crop.outputHeight,
+      aspect: crop.aspectRatio,
+      width: crop.outputWidth,
+      height: crop.outputHeight,
+    };
+  }, [slot, crop]);
+
   const upload = async (file: File) => {
+    // A dropped file skips the crop modal, so it is measured here instead —
+    // otherwise the drop zone would be a way to bypass the slot rules.
+    if (strict && geometry && !isVideo && file.type !== "image/svg+xml") {
+      const size = await readImageSize(file);
+      const problem = size ? geometryProblem(size, geometry, label) : null;
+      if (problem) {
+        enqueueSnackbar(problem, { variant: "error" });
+        return;
+      }
+    }
     setBusy(true);
     setProgress(0);
     try {
@@ -121,9 +235,17 @@ export default function MediaUploader({
     }
   };
 
-  const onPickerSelect = (items: { secure_url: string }[]) => {
+  const onPickerSelect = (items: MediaLibraryItem[]) => {
     const first = items[0];
-    if (first) onChange(first.secure_url);
+    if (!first) return;
+    if (strict && geometry && first.format !== "svg") {
+      const problem = geometryProblem(first, geometry, label);
+      if (problem) {
+        enqueueSnackbar(problem, { variant: "error" });
+        return;
+      }
+    }
+    onChange(first.secure_url);
   };
 
   // Translate the legacy fixed CropSpec into the MediaPicker crop spec.
@@ -248,6 +370,11 @@ export default function MediaUploader({
             {crop && kind !== "video" && (
               <Typography variant="caption" color="primary.main">
                 Will be cropped to {crop.outputWidth}×{crop.outputHeight} before upload
+              </Typography>
+            )}
+            {strict && geometry && !crop && kind !== "video" && (
+              <Typography variant="caption" color="primary.main">
+                Needs at least {geometry.minWidth}×{geometry.minHeight} at {geometry.aspect}:1
               </Typography>
             )}
           </Stack>

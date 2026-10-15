@@ -183,9 +183,32 @@ export interface GeocodeCityResult {
   formatted_address: string;
 }
 
+// Places (migration 0070) — airports & railway stations under a city.
+// Creating one auto-provisions its PLACE_CABS landing page (unpublished).
+export type PlaceKind = "AIRPORT" | "RAILWAY_STATION";
+
+export interface Place {
+  id: number;
+  city_id: number;
+  kind: PlaceKind;
+  name: string;
+  code: string | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  is_active: boolean;
+  seo_title: string | null;
+  seo_description: string | null;
+  seo_keywords: string | null;
+  city_name: string | null;
+  page_slug: string | null;
+  page_published: boolean | null;
+}
+
 export interface VehicleCategory {
   id: number;
   category_name: string;
+  slug: string | null;
   seating_capacity: number | null;
   luggage_capacity: number | null;
   is_active: boolean;
@@ -209,6 +232,7 @@ export interface ServiceTypeRecord {
   id: number;
   type_code: string;       // CAB | HOTEL | TOUR — immutable
   label: string;
+  slug: string | null;
   description: string | null;
   icon_url: string | null;
   image_url: string | null;
@@ -272,6 +296,45 @@ Object.assign(settingsService, {
       })
       .then(r => r.data),
 
+  // Places (airports / railway stations)
+  getPlaces: (params?: { city_id?: number; active_only?: boolean; search?: string }) =>
+    apiClient.get<Place[]>("/admin/settings/master/places", {
+      params: params ?? {},
+    }).then(r => r.data),
+
+  createPlace: (data: {
+    city_id: number;
+    kind: PlaceKind;
+    name: string;
+    code?: string;
+    address?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+    is_active?: boolean;
+    seo_title?: string;
+    seo_description?: string;
+    seo_keywords?: string;
+  }) =>
+    apiClient.post<Place>("/admin/settings/master/places", data).then(r => r.data),
+
+  updatePlace: (id: number, data: Partial<{
+    city_id: number;
+    kind: PlaceKind;
+    name: string;
+    code: string | null;
+    address: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    is_active: boolean;
+    seo_title: string | null;
+    seo_description: string | null;
+    seo_keywords: string | null;
+  }>) =>
+    apiClient.patch<Place>(`/admin/settings/master/places/${id}`, data).then(r => r.data),
+
+  deletePlace: (id: number) =>
+    apiClient.delete(`/admin/settings/master/places/${id}`).then(r => r.data),
+
   // Vehicle Categories (CAB booking assets)
   getVehicleCategories: (activeOnly = false) =>
     apiClient.get<VehicleCategory[]>("/admin/settings/master/vehicle-categories", {
@@ -279,7 +342,7 @@ Object.assign(settingsService, {
     }).then(r => r.data),
 
   createVehicleCategory: (data: {
-    category_name: string; seating_capacity?: number; luggage_capacity?: number;
+    category_name: string; slug?: string; seating_capacity?: number; luggage_capacity?: number;
     image_url?: string; icon_url?: string;
     seo_title?: string; seo_description?: string; seo_keywords?: string;
     display_order?: number;
@@ -287,7 +350,7 @@ Object.assign(settingsService, {
     apiClient.post<VehicleCategory>("/admin/settings/master/vehicle-categories", data).then(r => r.data),
 
   updateVehicleCategory: (id: number, data: {
-    category_name?: string; seating_capacity?: number; luggage_capacity?: number; is_active?: boolean;
+    category_name?: string; slug?: string | null; seating_capacity?: number; luggage_capacity?: number; is_active?: boolean;
     image_url?: string | null; icon_url?: string | null;
     seo_title?: string | null; seo_description?: string | null; seo_keywords?: string | null;
     display_order?: number;
@@ -304,7 +367,7 @@ Object.assign(settingsService, {
     }).then(r => r.data),
 
   updateServiceType: (id: number, data: {
-    label?: string; description?: string | null;
+    label?: string; slug?: string | null; description?: string | null;
     icon_url?: string | null; image_url?: string | null;
     seo_title?: string | null; seo_description?: string | null;
     seo_keywords?: string | null; display_order?: number; is_active?: boolean;
@@ -312,7 +375,7 @@ Object.assign(settingsService, {
     apiClient.patch<ServiceTypeRecord>(`/admin/settings/master/service-types/${id}`, data).then(r => r.data),
 
   createServiceType: (data: {
-    type_code: string; label: string; description?: string | null;
+    type_code: string; label: string; slug?: string; description?: string | null;
     icon_url?: string | null; image_url?: string | null;
     seo_title?: string | null; seo_description?: string | null;
     seo_keywords?: string | null; display_order?: number; is_active?: boolean;

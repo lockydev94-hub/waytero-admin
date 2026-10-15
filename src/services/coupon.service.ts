@@ -2,10 +2,49 @@
 // WAYTERO ADMIN — COUPON SERVICE
 // Endpoints: /admin/coupons  (per coupon_api.py)
 // ============================================================
-import axios from "axios";
-import { API_BASE_URL } from "../constants";
+import apiClient from "./api";
 
-const base = `${API_BASE_URL}/admin/coupons`;
+const base = "/admin/coupons";
+
+export type CouponType = "PLATFORM" | "PARTNER_ONLY" | "PLATFORM_PARTNER";
+
+export const COUPON_TYPE_LABELS: Record<CouponType, string> = {
+  PLATFORM: "Platform funded",
+  PARTNER_ONLY: "Partner funded",
+  PLATFORM_PARTNER: "Platform + partner split",
+};
+
+export interface CouponPartnerRule {
+  id: number;
+  partner_id: number;
+  joined_at: string;
+  is_active: boolean;
+}
+
+export interface CouponPartnerActivity {
+  partner_id: number;
+  business_name: string | null;
+  partner_status: string;
+  joined_at: string;
+  is_active: boolean;
+  offered_count: number;
+  accepted_count: number;
+  declined_count: number;
+  declined_with_cabs: number;
+  can_remove: boolean;
+  declines: {
+    booking_number: string;
+    rejected_at: string | null;
+    reason_code: string | null;
+    available_cabs_at_decline: number | null;
+  }[];
+}
+
+export interface CouponPartnersResponse {
+  coupon_id: number;
+  coupon_type: CouponType;
+  items: CouponPartnerActivity[];
+}
 
 export interface CouponServiceRule {
   id: number;
@@ -25,6 +64,9 @@ export interface CouponCustomerRule {
 export interface Coupon {
   id: number;
   coupon_code: string;
+  coupon_type: CouponType;
+  platform_share_percent: number | null;
+  partner_rules: CouponPartnerRule[];
   title: string;
   description: string | null;
   apply_to: string;
@@ -63,6 +105,9 @@ export interface CouponUsagePaginatedResponse {
 }
 export interface CouponCreatePayload {
   coupon_code: string;
+  coupon_type: CouponType;
+  platform_share_percent: number | null;
+  partner_ids: number[];
   title: string;
   description?: string;
   apply_to: string;
@@ -81,31 +126,30 @@ export interface CouponCreatePayload {
   customer_mobiles: string[];
 }
 
-function authHeader() {
-  const token = localStorage.getItem("wt_access_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
 export const couponService = {
   list: (params?: { is_active?: boolean; apply_to?: string }) =>
-    axios.get<Coupon[]>(base, { headers: authHeader(), params }).then((r) => r.data),
+    apiClient.get<Coupon[]>(base, { params }).then((r) => r.data),
 
   get: (id: number) =>
-    axios.get<Coupon>(`${base}/${id}`, { headers: authHeader() }).then((r) => r.data),
+    apiClient.get<Coupon>(`${base}/${id}`).then((r) => r.data),
 
   create: (payload: CouponCreatePayload) =>
-    axios.post<Coupon>(base, payload, { headers: authHeader() }).then((r) => r.data),
+    apiClient.post<Coupon>(base, payload).then((r) => r.data),
 
   update: (id: number, payload: Partial<CouponCreatePayload> & { is_active?: boolean }) =>
-    axios.put<Coupon>(`${base}/${id}`, payload, { headers: authHeader() }).then((r) => r.data),
+    apiClient.put<Coupon>(`${base}/${id}`, payload).then((r) => r.data),
 
-  delete: (id: number) =>
-    axios.delete(`${base}/${id}`, { headers: authHeader() }),
+  delete: (id: number) => apiClient.delete(`${base}/${id}`),
+
+  partners: (id: number) =>
+    apiClient.get<CouponPartnersResponse>(`${base}/${id}/partners`).then((r) => r.data),
+
+  removePartner: (id: number, partnerId: number) =>
+    apiClient.delete(`${base}/${id}/partners/${partnerId}`).then((r) => r.data),
 
   usages: (id: number, page = 1, pageSize = 20) =>
-    axios
+    apiClient
       .get<CouponUsagePaginatedResponse>(`${base}/${id}/usages`, {
-        headers: authHeader(),
         params: { page, page_size: pageSize },
       })
       .then((r) => r.data),

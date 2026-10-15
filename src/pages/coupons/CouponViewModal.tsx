@@ -21,9 +21,12 @@ import {
   HourglassEmpty,
 } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO, isAfter, isBefore } from "date-fns";
 import {
   couponService,
+  CouponPartnerActivity,
+  COUPON_TYPE_LABELS,
   Coupon,
   CouponUsageRecord,
   CouponUsagePaginatedResponse,
@@ -97,17 +100,41 @@ interface CouponViewModalProps {
   open: boolean;
   coupon: Coupon | null;
   onClose: () => void;
+  onPartnersChanged?: (couponId: number) => void;
   cities?: City[];
   vehicleCategories?: VehicleCategory[];
 }
 
 const PAGE_SIZE = 15;
 
-export default function CouponViewModal({ open, coupon, onClose, cities = [], vehicleCategories = [] }: CouponViewModalProps) {
+export default function CouponViewModal({ open, coupon, onClose, onPartnersChanged, cities = [], vehicleCategories = [] }: CouponViewModalProps) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
 
   const [tab, setTab] = useState(0);
+  const [removeTarget, setRemoveTarget] = useState<CouponPartnerActivity | null>(null);
+  const queryClient = useQueryClient();
+  const partnerActivity = useQuery({
+    queryKey: ["coupon-partners", coupon?.id],
+    queryFn: () => couponService.partners(coupon!.id),
+    enabled: open && !!coupon && tab === 2,
+  });
+  const removePartner = useMutation({
+    mutationFn: ({ couponId, partnerId }: { couponId: number; partnerId: number }) => couponService.removePartner(couponId, partnerId),
+    onSuccess: (_, { couponId }) => {
+      setRemoveTarget(null);
+      queryClient.invalidateQueries({ queryKey: ["coupon-partners", couponId] });
+      queryClient.invalidateQueries({ queryKey: ["cab-coupon-lock"] });
+      onPartnersChanged?.(couponId);
+      enqueueSnackbar("Partner removed; decline history preserved", { variant: "success" });
+    },
+    onError: (error: any) => {
+      const detail = error?.response?.data?.detail;
+      enqueueSnackbar(typeof detail === "string" ? detail : "Partner removal failed. Eligibility may have changed.", { variant: "error" });
+      queryClient.invalidateQueries({ queryKey: ["coupon-partners", coupon?.id] });
+      setRemoveTarget(null);
+    },
+  });
 
   // Lookup helpers
   const cityName = (id: number) => cities.find(c => c.id === id)?.name ?? `City #${id}`;
@@ -142,6 +169,7 @@ export default function CouponViewModal({ open, coupon, onClose, cities = [], ve
       setUsagePage(1);
       setUsageData(null);
       setUsageError(false);
+      setRemoveTarget(null);
     }
   }, [open, coupon?.id]);
 
@@ -269,6 +297,7 @@ export default function CouponViewModal({ open, coupon, onClose, cities = [], ve
             icon={<ReceiptLong sx={{ fontSize: 16 }} />}
             iconPosition="start"
           />
+          <Tab label="Partners & declines" icon={<People sx={{ fontSize: 16 }} />} iconPosition="start" />
         </Tabs>
       </Box>
 
@@ -322,6 +351,21 @@ export default function CouponViewModal({ open, coupon, onClose, cities = [], ve
               </Box>
             )}
 
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Commission remains pre-discount. The partner-funded share is deducted from payout.
+              Funding edits apply only to new bookings; existing bookings retain their original funding.
+            </Alert>
+            <InfoRow icon={<LocalOffer fontSize="small" />} label="Coupon funding"
+              value={
+                <Box>
+                  <Typography variant="body2" fontWeight={700}>{COUPON_TYPE_LABELS[coupon.coupon_type ?? "PLATFORM"]}</Typography>
+                  {coupon.coupon_type === "PLATFORM_PARTNER" && (
+                    <Typography variant="body2">Platform {coupon.platform_share_percent}% / Partner {100 - (coupon.platform_share_percent ?? 0)}%</Typography>
+                  )}
+                  <Typography variant="caption">{(coupon.partner_rules ?? []).filter(rule => rule.is_active).length} active partner rules</Typography>
+                </Box>
+              }
+            />
             <Divider sx={{ mb: 0 }} />
 
             {/* Details */}
@@ -659,7 +703,74 @@ export default function CouponViewModal({ open, coupon, onClose, cities = [], ve
             )}
           </Box>
         </TabPanel>
+        <TabPanel value={tab} index={2}>
+          <Stack spacing={2} sx={{ px: 3, pb: 3 }}>
+            <Alert severity="info">
+              Removal requires a genuine partner decline with available cabs, validated by the server.
+              No-cab, unknown availability and timeout events are not grounds for removal. Removed partners remain in this history.
+              If all eligible cab partners decline, the booking is cancelled; funding never converts to platform funding.
+            </Alert>
+            <Button onClick={() => partnerActivity.refetch()} disabled={partnerActivity.isFetching || removePartner.isPending} startIcon={<Replay />}>Refresh partner history</Button>
+            {partnerActivity.isFetching ? <CircularProgress size={28} /> : partnerActivity.isError ? (
+              <Alert severity="error">Failed to load partner history. Refresh to retry; removal is unavailable.</Alert>
+            ) : partnerActivity.data?.items.length === 0 ? <Typography>No partner history.</Typography> : (
+              partnerActivity.data?.items.map(partner => (
+                <Paper key={partner.partner_id} variant="outlined" sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1} flexWrap="wrap">
+                    <Box>
+                      <Typography fontWeight={700}>{partner.business_name || `Partner #${partner.partner_id}`} · #{partner.partner_id}</Typography>
+                      <Typography variant="caption">{partner.partner_status} · Joined {partner.joined_at ? format(new Date(partner.joined_at), "dd MMM yyyy, HH:mm") : "—"}</Typography>
+                    </Box>
+                    <Chip size="small" label={partner.is_active ? "Active rule" : "Removed"} color={partner.is_active ? "success" : "default"} />
+                    <Button color="error" size="small"
+                      disabled={!partner.is_active || !partner.can_remove || partner.declined_with_cabs < 1 || removePartner.isPending}
+                      onClick={() => setRemoveTarget(partner)}>
+                      Remove partner
+                    </Button>
+                  </Stack>
+                  <Typography variant="body2" mt={1}>
+                    Offered: {partner.offered_count} · Accepted: {partner.accepted_count} · Declined: {partner.declined_count} · Declined with cabs: {partner.declined_with_cabs}
+                  </Typography>
+                  {partner.is_active && !partner.can_remove && <Typography variant="caption" color="text.secondary">No server-validated grounds for removal.</Typography>}
+                  {partner.declines.length > 0 && (
+                    <TableContainer sx={{ mt: 1 }}>
+                      <Table size="small">
+                        <TableHead><TableRow>
+                          <TableCell>Booking</TableCell><TableCell>Declined at</TableCell><TableCell>Reason</TableCell><TableCell>Available cabs at decline</TableCell>
+                        </TableRow></TableHead>
+                        <TableBody>{partner.declines.map((decline, index) => (
+                          <TableRow key={`${decline.booking_number}-${decline.rejected_at}-${index}`}>
+                            <TableCell>{decline.booking_number}</TableCell>
+                            <TableCell>{decline.rejected_at ? format(new Date(decline.rejected_at), "dd MMM yyyy, HH:mm") : "—"}</TableCell>
+                            <TableCell>{decline.reason_code ?? "Unknown"}</TableCell>
+                            <TableCell>{decline.available_cabs_at_decline ?? "Unknown"}</TableCell>
+                          </TableRow>
+                        ))}</TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Paper>
+              ))
+            )}
+          </Stack>
+        </TabPanel>
       </DialogContent>
+      <Dialog open={!!removeTarget} onClose={() => { if (!removePartner.isPending) setRemoveTarget(null); }} maxWidth="xs" fullWidth>
+        <DialogTitle>Remove coupon partner?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Remove {removeTarget?.business_name || `Partner #${removeTarget?.partner_id}`} from {coupon.coupon_code}?
+            The server will validate a genuine decline with available cabs. This soft-removes the partner rule and preserves all history.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={removePartner.isPending} onClick={() => setRemoveTarget(null)}>Keep partner</Button>
+          <Button color="error" variant="contained" disabled={removePartner.isPending || partnerActivity.isFetching || partnerActivity.isError || !removeTarget?.can_remove}
+            onClick={() => { if (removeTarget) removePartner.mutate({ couponId: coupon.id, partnerId: removeTarget.partner_id }); }}>
+            {removePartner.isPending ? "Removing…" : "Confirm removal"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Footer ── */}
       <DialogActions

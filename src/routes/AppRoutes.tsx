@@ -47,6 +47,8 @@ const CmsPage                   = lazy(() => import("../pages/cms/CmsPage"));
 const SectionEditorPage         = lazy(() => import("../pages/cms/SectionEditorPage"));
 const BlogListPage              = lazy(() => import("../pages/blog/BlogListPage"));
 const BlogEditorPage            = lazy(() => import("../pages/blog/BlogEditorPage"));
+const LandingPagesListPage      = lazy(() => import("../pages/landing-pages/LandingPagesListPage"));
+const LandingPageEditorPage     = lazy(() => import("../pages/landing-pages/LandingPageEditorPage"));
 const PartnerApplicationsPage   = lazy(() => import("../pages/leads/PartnerApplicationsPage"));
 const ContactMessagesPage       = lazy(() => import("../pages/leads/ContactMessagesPage"));
 const ChatPage                  = lazy(() => import("../pages/chat/ChatPage"));
@@ -121,6 +123,11 @@ export function AppRoutes() {
             <Route path="/cms/blog"                    element={<BlogListPage />} />
             <Route path="/cms/blog/new"                element={<BlogEditorPage />} />
             <Route path="/cms/blog/:id"                element={<BlogEditorPage />} />
+
+            {/* Landing pages — dedicated city / state service pages */}
+            <Route path="/cms/landing-pages"            element={<LandingPagesListPage />} />
+            <Route path="/cms/landing-pages/new"        element={<LandingPageEditorPage />} />
+            <Route path="/cms/landing-pages/:id"        element={<LandingPageEditorPage />} />
 
             {/* Website leads — partner applications + contact messages */}
             <Route path="/leads/partner-applications"  element={<PartnerApplicationsPage />} />

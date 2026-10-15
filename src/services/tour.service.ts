@@ -27,6 +27,9 @@ export interface TourPackage {
   package_code: string;
   slug: string;
   package_name: string;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  seo_keywords?: string | null;
   package_type: string;
   destination: string;
   city_id: number;

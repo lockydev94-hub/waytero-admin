@@ -15,6 +15,7 @@ import { hotelService, HotelDetail } from "../../../../services/hotel.service";
 import SectionHeader from "../../components/SectionHeader";
 import { HOTEL_QUERY_KEYS } from "../../constants";
 import { apiErrorMessage } from "../../../../utils/apiError";
+import { SLUG_REGEX } from "../../../../utils/seoValidation";
 
 interface Props {
   hotel: HotelDetail;
@@ -63,9 +64,14 @@ export default function SeoTab({ hotel, onRefresh }: Props) {
     setDirty(true);
   };
 
+  const normalizedSlug = form.slug.trim().toLowerCase().replace(/\s+/g, "-");
+  const slugError = normalizedSlug && !SLUG_REGEX.test(normalizedSlug)
+    ? "Lowercase letters, digits and single hyphens only"
+    : undefined;
+
   const mutation = useMutation({
     mutationFn: () => hotelService.updateSeo(hotel.id, {
-      slug: form.slug.trim().toLowerCase().replace(/\s+/g, "-") || undefined,
+      slug: normalizedSlug || undefined,
       seo_title: form.seo_title.trim() || undefined,
       seo_description: form.seo_description.trim() || undefined,
       seo_keywords: keywords.join(", ") || undefined,
@@ -98,8 +104,10 @@ export default function SeoTab({ hotel, onRefresh }: Props) {
               onChange={set("slug")}
               size="small"
               fullWidth
+              error={Boolean(slugError)}
+              inputProps={{ maxLength: 120 }}
               InputProps={{ startAdornment: <InputAdornment position="start">waytero.com/hotels/</InputAdornment> }}
-              helperText="Lowercase letters, numbers and hyphens only."
+              helperText={slugError ?? "Lowercase letters, numbers and hyphens only."}
             />
             {hotel.status === "ACTIVE" && form.slug !== hotel.slug && (
               <Alert severity="warning" icon={<WarningAmber />} sx={{ mt: 1, borderRadius: 1.5 }}>
@@ -226,7 +234,7 @@ export default function SeoTab({ hotel, onRefresh }: Props) {
             variant="contained"
             startIcon={mutation.isPending ? <CircularProgress size={16} color="inherit" /> : <Save />}
             onClick={() => mutation.mutate()}
-            disabled={!dirty || mutation.isPending}
+            disabled={!dirty || mutation.isPending || Boolean(slugError)}
           >
             {mutation.isPending ? "Saving…" : "Save SEO"}
           </Button>

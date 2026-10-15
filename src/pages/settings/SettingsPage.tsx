@@ -23,12 +23,14 @@ import {
   Business, AddLocationAlt, CropOriginal, Image, Store, AccountBalance,
   ZoomIn, ZoomOut, RotateLeft, CheckCircleOutline, UploadFileOutlined,
   ReceiptLong, Percent, ToggleOn, Hotel, Spa, Whatshot, ContentPasteGo, Code,
-  MyLocation,
+  MyLocation, Flight, Train,
 } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
-import { settingsService, uploadMedia, MediaUploadResult, SystemConfig, ApiIntegration, CommissionGroup, AppVersion, NotificationTemplate, City, VehicleCategory, VehiclePricingRule, State, SERVICE_TYPES, DefaultPricingRule, TRIP_TYPES, ServiceTypeRecord } from "../../services/settings.service";
+import { settingsService, uploadMedia, MediaUploadResult, SystemConfig, ApiIntegration, CommissionGroup, AppVersion, NotificationTemplate, City, VehicleCategory, VehiclePricingRule, State, SERVICE_TYPES, DefaultPricingRule, TRIP_TYPES, ServiceTypeRecord, Place, PlaceKind } from "../../services/settings.service";
 import MediaPicker from "../../components/media/MediaPicker";
 import { hotelService } from "../../services/hotel.service";
+import { SLUG_REGEX, slugify } from "../../utils/seoValidation";
+import { apiErrorMessage } from "../../utils/apiError";
 import EmailSettingsTab from "./EmailSettingsTab";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -62,8 +64,24 @@ const INTEGRATION_FIELDS: Record<string, string[]> = {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 
+// Tab order must match the <Tab> list below; /settings?tab=master-data
+// deep-links from the Landing Pages CMS ("manage serviceable cities").
+const TAB_KEYS = [
+  "platform", "system-config", "api-integrations", "app-versions",
+  "commission", "pricing", "notifications", "email", "master-data",
+];
+
+function initialTab(): number {
+  const raw = new URLSearchParams(window.location.search).get("tab");
+  if (!raw) return 0;
+  const byKey = TAB_KEYS.indexOf(raw.toLowerCase());
+  if (byKey >= 0) return byKey;
+  const byIndex = Number(raw);
+  return Number.isInteger(byIndex) && byIndex >= 0 && byIndex < TAB_KEYS.length ? byIndex : 0;
+}
+
 export default function SettingsPage() {
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(initialTab);
   const { enqueueSnackbar } = useSnackbar();
 
   return (
@@ -3775,6 +3793,279 @@ function CityDialog({
   );
 }
 
+// ── Place Dialog (airports / railway stations — migration 0070) ─────────────
+// Creating a place auto-provisions its PLACE_CABS landing page (draft); this
+// dialog owns only the master-data fields + optional SEO overrides. Rename
+// never regenerates the page slug, so URLs stay stable once published.
+function PlaceDialog({
+  open, place, cities, onClose, onSaved, enqueueSnackbar,
+}: { open: boolean; place: Place | null; cities: City[]; onClose: () => void; onSaved: () => void; enqueueSnackbar: any }) {
+  const isEdit = !!place;
+  const [form, setForm] = useState<{
+    city_id: number;
+    kind: PlaceKind;
+    name: string;
+    code: string;
+    address: string;
+    latitude: number | "";
+    longitude: number | "";
+    is_active: boolean;
+    seo_title: string;
+    seo_description: string;
+    seo_keywords: string;
+  }>({
+    city_id: 0, kind: "AIRPORT", name: "", code: "", address: "",
+    latitude: "", longitude: "", is_active: true,
+    seo_title: "", seo_description: "", seo_keywords: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
+  const [showSeo, setShowSeo] = useState(false);
+
+  useEffect(() => {
+    if (place) {
+      setForm({
+        city_id: place.city_id,
+        kind: place.kind,
+        name: place.name,
+        code: place.code ?? "",
+        address: place.address ?? "",
+        latitude: place.latitude ?? "",
+        longitude: place.longitude ?? "",
+        is_active: place.is_active,
+        seo_title: place.seo_title ?? "",
+        seo_description: place.seo_description ?? "",
+        seo_keywords: place.seo_keywords ?? "",
+      });
+      setShowSeo(!!(place.seo_title || place.seo_description || place.seo_keywords));
+    } else {
+      setForm({
+        city_id: cities[0]?.id ?? 0, kind: "AIRPORT", name: "", code: "", address: "",
+        latitude: "", longitude: "", is_active: true,
+        seo_title: "", seo_description: "", seo_keywords: "",
+      });
+      setShowSeo(false);
+    }
+  }, [place, cities]);
+
+  const findCoordinates = async () => {
+    if (!form.name.trim()) {
+      enqueueSnackbar("Enter the place name first", { variant: "warning" });
+      return;
+    }
+    const city = cities.find(c => c.id === form.city_id);
+    setGeocoding(true);
+    try {
+      const result = await (settingsService as any).geocodeCity(form.name.trim(), city?.state_name);
+      setForm(p => ({ ...p, latitude: result.latitude, longitude: result.longitude }));
+      enqueueSnackbar("Coordinates found", { variant: "success" });
+    } catch (e: any) {
+      enqueueSnackbar(e?.response?.data?.detail ?? "Could not find coordinates for this place", { variant: "error" });
+    } finally {
+      setGeocoding(false);
+    }
+  };
+
+  const save = async () => {
+    if (!form.name.trim() || !form.city_id || !form.kind) return;
+    if (form.seo_title.length > 120 || form.seo_description.length > 320 || form.seo_keywords.length > 500) {
+      enqueueSnackbar("SEO fields exceed their limits (120 / 320 / 500)", { variant: "error" });
+      return;
+    }
+    setSaving(true);
+    const payload: Record<string, unknown> = {
+      city_id: form.city_id,
+      kind: form.kind,
+      name: form.name.trim(),
+      code: form.code.trim() || null,
+      address: form.address.trim() || null,
+      latitude: form.latitude === "" ? null : Number(form.latitude),
+      longitude: form.longitude === "" ? null : Number(form.longitude),
+      is_active: form.is_active,
+      seo_title: form.seo_title.trim() || null,
+      seo_description: form.seo_description.trim() || null,
+      seo_keywords: form.seo_keywords.trim() || null,
+    };
+    try {
+      if (isEdit) {
+        await (settingsService as any).updatePlace(place!.id, payload);
+      } else {
+        await (settingsService as any).createPlace(payload);
+      }
+      enqueueSnackbar(
+        isEdit ? "Place updated" : "Place created — its cab landing page was added as a draft",
+        { variant: "success" },
+      );
+      onSaved();
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (isEdit ? "Update failed" : "Create failed");
+      enqueueSnackbar(msg, { variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Stack direction="row" alignItems="center" spacing={1}>
+          {form.kind === "AIRPORT" ? <Flight color="primary" /> : <Train color="primary" />}
+          <Box>
+            <Typography fontWeight={700} fontSize={18}>{isEdit ? "Edit Place" : "Add Place"}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              Airport or railway station — powers its own cab landing page
+            </Typography>
+          </Box>
+        </Stack>
+      </DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ pt: 1 }}>
+          <Grid container spacing={1.5}>
+            <Grid item xs={7}>
+              <FormControl fullWidth size="small" required>
+                <InputLabel>City</InputLabel>
+                <Select
+                  value={form.city_id || ""}
+                  label="City"
+                  onChange={e => setForm(p => ({ ...p, city_id: Number(e.target.value) }))}
+                >
+                  {cities.map(c => (
+                    <MenuItem key={c.id} value={c.id}>{c.name}{c.state_name ? `, ${c.state_name}` : ""}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={5}>
+              <FormControl fullWidth size="small" required>
+                <InputLabel>Kind</InputLabel>
+                <Select
+                  value={form.kind}
+                  label="Kind"
+                  onChange={e => setForm(p => ({ ...p, kind: e.target.value as PlaceKind }))}
+                >
+                  <MenuItem value="AIRPORT">Airport</MenuItem>
+                  <MenuItem value="RAILWAY_STATION">Railway station</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+          <TextField
+            size="small" fullWidth required
+            label="Place Name"
+            value={form.name}
+            onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
+            helperText="e.g. Biju Patnaik International Airport"
+            inputProps={{ maxLength: 200 }}
+          />
+          <TextField
+            size="small" fullWidth
+            label="Code (optional)"
+            value={form.code}
+            onChange={e => setForm(p => ({ ...p, code: e.target.value.toUpperCase() }))}
+            helperText="IATA code (BBI) or station code (BBS)"
+            inputProps={{ maxLength: 10 }}
+          />
+          <TextField
+            size="small" fullWidth multiline minRows={2}
+            label="Address (optional)"
+            value={form.address}
+            onChange={e => setForm(p => ({ ...p, address: e.target.value }))}
+          />
+
+          <Box sx={{ border: 1, borderColor: "divider", borderRadius: 2, p: 1.5, bgcolor: "action.hover" }}>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+              <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ letterSpacing: 0.4, textTransform: "uppercase" }}>
+                Coordinates
+              </Typography>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={geocoding ? <CircularProgress size={14} /> : <MyLocation />}
+                onClick={findCoordinates}
+                disabled={geocoding || !form.name.trim()}
+              >
+                Find from address
+              </Button>
+            </Stack>
+            <Grid container spacing={1.5}>
+              <Grid item xs={6}>
+                <TextField
+                  size="small" fullWidth label="Latitude" type="number"
+                  value={form.latitude}
+                  onChange={e => setForm(p => ({ ...p, latitude: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  inputProps={{ step: "any", min: -90, max: 90 }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                <TextField
+                  size="small" fullWidth label="Longitude" type="number"
+                  value={form.longitude}
+                  onChange={e => setForm(p => ({ ...p, longitude: e.target.value === "" ? "" : Number(e.target.value) }))}
+                  inputProps={{ step: "any", min: -180, max: 180 }}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+
+          <Box>
+            <Button
+              size="small" onClick={() => setShowSeo(v => !v)}
+              startIcon={showSeo ? <KeyboardArrowUp /> : <KeyboardArrowDown />}
+              sx={{ textTransform: "none", fontWeight: 600 }}
+            >
+              SEO overrides {showSeo ? "(hide)" : "(optional)"}
+            </Button>
+            <Collapse in={showSeo}>
+              <Stack spacing={1.5} sx={{ mt: 1.5 }}>
+                <TextField
+                  size="small" fullWidth
+                  label="Meta title"
+                  value={form.seo_title}
+                  onChange={e => setForm(p => ({ ...p, seo_title: e.target.value }))}
+                  helperText={`${form.seo_title.length}/120 — leave empty to auto-generate “{place} Cab Booking”`}
+                  inputProps={{ maxLength: 120 }}
+                />
+                <TextField
+                  size="small" fullWidth multiline minRows={2}
+                  label="Meta description"
+                  value={form.seo_description}
+                  onChange={e => setForm(p => ({ ...p, seo_description: e.target.value }))}
+                  helperText={`${form.seo_description.length}/320`}
+                  inputProps={{ maxLength: 320 }}
+                />
+                <TextField
+                  size="small" fullWidth
+                  label="Meta keywords"
+                  value={form.seo_keywords}
+                  onChange={e => setForm(p => ({ ...p, seo_keywords: e.target.value }))}
+                  helperText={`${form.seo_keywords.length}/500 — comma separated`}
+                  inputProps={{ maxLength: 500 }}
+                />
+              </Stack>
+            </Collapse>
+          </Box>
+
+          <FormControlLabel
+            control={<Switch checked={form.is_active} onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))} color="success" />}
+            label="Active (place pages can be published)"
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 2 }}>
+        <Button onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button
+          variant="contained" onClick={save}
+          disabled={saving || !form.name.trim() || !form.city_id}
+          startIcon={saving ? <CircularProgress size={14} color="inherit" /> : (isEdit ? <Save /> : <Add />)}
+        >
+          {isEdit ? "Save Changes" : "Add Place"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ── Vehicle Category Dialog ───────────────────────────────────
 // ── VehicleCategoryImageCropModal ─────────────────────────────────────────────
 // Reusable crop modal for category image (16:9  1200x675) and icon (1:1  200x200)
@@ -3932,7 +4223,7 @@ function VehicleCategoryDialog({
 
   // Form state
   const [form, setForm] = useState({
-    category_name: "", seating_capacity: "", luggage_capacity: "",
+    category_name: "", slug: "", seating_capacity: "", luggage_capacity: "",
     is_active: true, display_order: "0",
     seo_title: "", seo_description: "", seo_keywords: "",
   });
@@ -3951,6 +4242,7 @@ function VehicleCategoryDialog({
     if (category) {
       setForm({
         category_name:    category.category_name,
+        slug:             category.slug ?? "",
         seating_capacity: category.seating_capacity != null ? String(category.seating_capacity) : "",
         luggage_capacity: category.luggage_capacity != null ? String(category.luggage_capacity) : "",
         is_active:        category.is_active,
@@ -3962,7 +4254,7 @@ function VehicleCategoryDialog({
       setImageUrl(category.image_url ?? null);
       setIconUrl(category.icon_url ?? null);
     } else {
-      setForm({ category_name: "", seating_capacity: "", luggage_capacity: "", is_active: true, display_order: "0", seo_title: "", seo_description: "", seo_keywords: "" });
+      setForm({ category_name: "", slug: "", seating_capacity: "", luggage_capacity: "", is_active: true, display_order: "0", seo_title: "", seo_description: "", seo_keywords: "" });
       setImageUrl(null); setIconUrl(null);
     }
     setActiveSection(0);
@@ -4000,9 +4292,14 @@ function VehicleCategoryDialog({
 
   const save = async () => {
     if (!form.category_name.trim()) { enqueueSnackbar("Category name is required", { variant: "warning" }); return; }
+    if (form.slug.trim() && !SLUG_REGEX.test(form.slug.trim())) {
+      enqueueSnackbar("Slug must be lowercase letters, digits and single hyphens (e.g. luxury-suv)", { variant: "error" });
+      return;
+    }
     setSaving(true);
     const payload = {
       category_name:    form.category_name.trim().toUpperCase().replace(/\s+/g, "_"),
+      slug:             form.slug.trim() || undefined,
       seating_capacity: form.seating_capacity ? Number(form.seating_capacity) : undefined,
       luggage_capacity: form.luggage_capacity ? Number(form.luggage_capacity) : undefined,
       is_active:        form.is_active,
@@ -4018,13 +4315,16 @@ function VehicleCategoryDialog({
       else        await (settingsService as any).createVehicleCategory(payload);
       enqueueSnackbar(isEdit ? "Category updated" : "Category created", { variant: "success" });
       onSaved();
-    } catch { enqueueSnackbar(isEdit ? "Update failed" : "Create failed", { variant: "error" }); }
+    } catch (err: any) {
+      enqueueSnackbar(apiErrorMessage(err, isEdit ? "Update failed" : "Create failed"), { variant: "error" });
+    }
     finally { setSaving(false); }
   };
 
   const SECTIONS = ["Basic Info", "Media & Icon", "SEO Details"];
   const seoTitleLen = form.seo_title.length;
   const seoDescLen  = form.seo_description.length;
+  const slugInvalid = form.slug.trim().length > 0 && !SLUG_REGEX.test(form.slug.trim());
 
   return (
     <>
@@ -4284,6 +4584,26 @@ function VehicleCategoryDialog({
                   Page SEO
                 </Typography>
                 <Stack gap={2.5}>
+                  {/* URL slug */}
+                  <Box>
+                    <TextField fullWidth label="URL Slug"
+                      value={form.slug}
+                      onChange={e => setForm(p => ({ ...p, slug: e.target.value.trim().toLowerCase().replace(/\s+/g, "-") }))}
+                      inputProps={{ maxLength: 120 }}
+                      error={slugInvalid}
+                      helperText={slugInvalid
+                        ? "Lowercase letters, digits and single hyphens only"
+                        : "Leave empty to generate from the name. Changing a live slug breaks existing links."}
+                      placeholder={slugify(form.category_name) || "luxury-suv"}
+                      InputLabelProps={{ sx: { color: "rgba(255,255,255,0.5)" } }}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start" sx={{ color: "rgba(255,255,255,0.35)", fontSize: "0.8rem" }}>waytero.com/cab/</InputAdornment>,
+                        sx: { color: "#fff", "& fieldset": { borderColor: slugInvalid ? "#f44336" : "rgba(255,255,255,0.15)" } },
+                      }}
+                      FormHelperTextProps={{ sx: { color: slugInvalid ? "#f44336" : "rgba(255,255,255,0.3)" } }}
+                    />
+                  </Box>
+
                   {/* SEO Title */}
                   <Box>
                     <TextField fullWidth label="SEO Title (meta title)"
@@ -4319,7 +4639,7 @@ function VehicleCategoryDialog({
                     {/* Live Google snippet preview */}
                     {(form.seo_title || form.seo_description) && (
                       <Box sx={{ mt: 1, p: 1.5, borderRadius: 2, bgcolor: "#fff", border: "1px solid #dfe1e5" }}>
-                        <Typography variant="caption" sx={{ color: "#202124", fontWeight: 400, fontSize: "0.7rem" }}>waytero.com › categories › {form.category_name.toLowerCase().replace(/_/g, "-")}</Typography>
+                        <Typography variant="caption" sx={{ color: "#202124", fontWeight: 400, fontSize: "0.7rem" }}>waytero.com › cab › {form.slug || slugify(form.category_name) || "[slug]"}</Typography>
                         <Typography sx={{ color: "#1a0dab", fontWeight: 500, fontSize: "0.92rem", lineHeight: 1.3, mb: 0.25 }}>
                           {form.seo_title || form.category_name || "Category Page"}
                         </Typography>
@@ -4420,14 +4740,14 @@ function ServiceTypeCreateDialog({
   open, onClose, onSaved, enqueueSnackbar,
 }: { open: boolean; onClose: () => void; onSaved: () => void; enqueueSnackbar: any }) {
   const [form, setForm] = useState({
-    type_code: "", label: "", description: "", display_order: "0", is_active: true,
+    type_code: "", label: "", slug: "", description: "", display_order: "0", is_active: true,
     seo_title: "", seo_description: "", seo_keywords: "",
   });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setForm({ type_code: "", label: "", description: "", display_order: "0", is_active: true,
+      setForm({ type_code: "", label: "", slug: "", description: "", display_order: "0", is_active: true,
                 seo_title: "", seo_description: "", seo_keywords: "" });
     }
   }, [open]);
@@ -4439,11 +4759,16 @@ function ServiceTypeCreateDialog({
       enqueueSnackbar("Type code must be uppercase letters, digits or underscores (e.g. FERRY, BUS_TOUR)", { variant: "warning" });
       return;
     }
+    if (form.slug.trim() && !SLUG_REGEX.test(form.slug.trim())) {
+      enqueueSnackbar("Slug must be lowercase letters, digits and single hyphens (e.g. ferry)", { variant: "error" });
+      return;
+    }
     setSaving(true);
     try {
       await (settingsService as any).createServiceType({
         type_code:       form.type_code.trim().toUpperCase(),
         label:           form.label.trim(),
+        slug:            form.slug.trim() || null,
         description:     form.description.trim() || null,
         display_order:   Number(form.display_order) || 0,
         is_active:       form.is_active,
@@ -4506,6 +4831,12 @@ function ServiceTypeCreateDialog({
             sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
           />
           {F("Display Label *", "label", { helper: "Shown to admin users everywhere service types appear" })}
+          {F("URL Slug", "slug", {
+            inputProps: { maxLength: 120 },
+            helper: form.slug.trim() && !SLUG_REGEX.test(form.slug.trim())
+              ? "Lowercase letters, digits and single hyphens only"
+              : "Used in the website URL. Leave empty to generate from the label.",
+          })}
           {F("Description", "description", { multiline: true, rows: 2, helper: "Brief description of this service category" })}
           <Stack direction="row" spacing={2}>
             {F("Display Order", "display_order", { inputProps: { type: "number", min: 0 } })}
@@ -4560,7 +4891,7 @@ function ServiceTypeDialog({
   const [activeSection, setActiveSection] = useState(0); // 0=Basic 1=Media 2=SEO
 
   const [form, setForm] = useState({
-    label: "", description: "", display_order: "0",
+    label: "", slug: "", description: "", display_order: "0",
     is_active: true,
     seo_title: "", seo_description: "", seo_keywords: "",
   });
@@ -4590,6 +4921,7 @@ function ServiceTypeDialog({
     if (serviceType) {
       setForm({
         label:           serviceType.label ?? "",
+        slug:            serviceType.slug ?? "",
         description:     serviceType.description ?? "",
         display_order:   String(serviceType.display_order ?? 0),
         is_active:       serviceType.is_active,
@@ -4622,10 +4954,15 @@ function ServiceTypeDialog({
 
   const save = async () => {
     if (!form.label.trim()) { enqueueSnackbar("Label is required", { variant: "warning" }); return; }
+    if (form.slug.trim() && !SLUG_REGEX.test(form.slug.trim())) {
+      enqueueSnackbar("Slug must be lowercase letters, digits and single hyphens (e.g. cab-booking)", { variant: "error" });
+      return;
+    }
     if (!serviceType) return;
     setSaving(true);
     const payload = {
       label:           form.label.trim(),
+      slug:            form.slug.trim() || null,
       description:     form.description.trim() || null,
       is_active:       form.is_active,
       display_order:   Number(form.display_order) || 0,
@@ -4639,7 +4976,7 @@ function ServiceTypeDialog({
       await (settingsService as any).updateServiceType(serviceType.id, payload);
       enqueueSnackbar("Service type updated", { variant: "success" });
       onSaved();
-    } catch { enqueueSnackbar("Update failed", { variant: "error" }); }
+    } catch (err: any) { enqueueSnackbar(apiErrorMessage(err, "Update failed"), { variant: "error" }); }
     finally   { setSaving(false); }
   };
 
@@ -4651,6 +4988,7 @@ function ServiceTypeDialog({
   const SECTIONS = ["Basic Info", "Media & Icon", "SEO Details"];
   const seoTitleLen = form.seo_title.length;
   const seoDescLen  = form.seo_description.length;
+  const slugInvalid = form.slug.trim().length > 0 && !SLUG_REGEX.test(form.slug.trim());
 
   return (
     <>
@@ -4929,6 +5267,24 @@ function ServiceTypeDialog({
                 </Typography>
                 <Stack gap={2.5}>
                   <Box>
+                    <TextField fullWidth label="URL Slug"
+                      value={form.slug}
+                      onChange={e => setForm(p => ({ ...p, slug: e.target.value.trim().toLowerCase().replace(/\s+/g, "-") }))}
+                      inputProps={{ maxLength: 120 }}
+                      error={slugInvalid}
+                      helperText={slugInvalid
+                        ? "Lowercase letters, digits and single hyphens only"
+                        : "Changing a live slug breaks every link and search result pointing at the page."}
+                      placeholder={slugify(form.label) || "cab-booking"}
+                      InputLabelProps={{ sx: { color: "rgba(255,255,255,0.5)" } }}
+                      InputProps={{
+                        startAdornment: <InputAdornment position="start" sx={{ color: "rgba(255,255,255,0.35)", fontSize: "0.8rem" }}>waytero.com/</InputAdornment>,
+                        sx: { color: "#fff", "& fieldset": { borderColor: slugInvalid ? "#f44336" : "rgba(255,255,255,0.15)" } },
+                      }}
+                      FormHelperTextProps={{ sx: { color: slugInvalid ? "#f44336" : "rgba(255,255,255,0.3)" } }}
+                    />
+                  </Box>
+                  <Box>
                     <TextField fullWidth label="SEO Title (meta title)"
                       value={form.seo_title}
                       onChange={e => setForm(p => ({ ...p, seo_title: e.target.value }))}
@@ -5072,6 +5428,12 @@ function MasterDataTab({ enqueueSnackbar }: any) {
   // Service types state
   const [serviceTypes, setServiceTypes] = useState<ServiceTypeRecord[]>([]);
 
+  // Places state (airports / railway stations — migration 0070)
+  const [places, setPlaces] = useState<Place[]>([]);
+  const [placesLoading, setPlacesLoading] = useState(true);
+  const [placeFilter, setPlaceFilter] = useState("");
+  const [placeDialog, setPlaceDialog] = useState<{ open: boolean; place: Place | null }>({ open: false, place: null });
+
   // Hotel master data state
   const [hotelCategories, setHotelCategories] = useState<any[]>([]);
   const [hotelAmenities, setHotelAmenities] = useState<any[]>([]);
@@ -5108,7 +5470,14 @@ function MasterDataTab({ enqueueSnackbar }: any) {
     finally { setStLoading(false); }
   }, []);
 
-  useEffect(() => { loadCities(); loadCategories(); loadServiceTypes(); loadHotelMasters(); }, [loadCities, loadCategories, loadServiceTypes]);
+  const loadPlaces = useCallback(async () => {
+    setPlacesLoading(true);
+    try { setPlaces(await (settingsService as any).getPlaces()); }
+    catch { enqueueSnackbar("Failed to load places", { variant: "error" }); }
+    finally { setPlacesLoading(false); }
+  }, []);
+
+  useEffect(() => { loadCities(); loadCategories(); loadServiceTypes(); loadPlaces(); loadHotelMasters(); }, [loadCities, loadCategories, loadServiceTypes, loadPlaces]);
 
   const loadHotelMasters = async () => {
     setHotelMasterLoading(true);
@@ -5141,6 +5510,15 @@ function MasterDataTab({ enqueueSnackbar }: any) {
       enqueueSnackbar("Category deleted", { variant: "success" });
       loadCategories();
     } catch { enqueueSnackbar("Delete failed — category may be in use by pricing rules or vehicles", { variant: "error" }); }
+  };
+
+  const deletePlace = async (id: number, name: string) => {
+    if (!window.confirm(`Delete place "${name}"? Its cab landing page will be deleted with it.`)) return;
+    try {
+      await (settingsService as any).deletePlace(id);
+      enqueueSnackbar("Place deleted", { variant: "success" });
+      loadPlaces();
+    } catch { enqueueSnackbar("Delete failed", { variant: "error" }); }
   };
 
   const filteredCities = cities.filter(c =>
@@ -5191,6 +5569,11 @@ function MasterDataTab({ enqueueSnackbar }: any) {
             icon={<AccountBalance sx={{ fontSize: 16 }} />}
             iconPosition="start"
             label={`GST Slabs (Hotel) ${gstSlabs.length > 0 ? `(${gstSlabs.length})` : ""}`}
+          />
+          <Tab
+            icon={<Flight sx={{ fontSize: 16 }} />}
+            iconPosition="start"
+            label={`Places ${places.length > 0 ? `(${places.length})` : ""}`}
           />
         </Tabs>
       </Paper>
@@ -5833,6 +6216,190 @@ function MasterDataTab({ enqueueSnackbar }: any) {
           )}
         </Box>
       )}
+
+      {/* ── Sub-tab 6: Places (airports / railway stations) ─── */}
+      {subTab === 6 && (() => {
+        const q = placeFilter.trim().toLowerCase();
+        const filteredPlaces = !q ? places : places.filter(p =>
+          p.name.toLowerCase().includes(q) ||
+          (p.city_name ?? "").toLowerCase().includes(q) ||
+          (p.code ?? "").toLowerCase().includes(q) ||
+          p.kind.toLowerCase().includes(q)
+        );
+        const placesByCity = filteredPlaces.reduce((acc, p) => {
+          const key = p.city_name ?? "Unknown city";
+          (acc[key] ??= []).push(p);
+          return acc;
+        }, {} as Record<string, Place[]>);
+        return (
+          <Box>
+            <Stack direction="row" alignItems="center" justifyContent="space-between" mb={3}>
+              <Box>
+                <Typography variant="h6" fontWeight={700}>Place Management</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Airports &amp; railway stations — each one gets its own cab landing page (SEO)
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  size="small"
+                  placeholder="Search places..."
+                  value={placeFilter}
+                  onChange={e => setPlaceFilter(e.target.value)}
+                  InputProps={{ startAdornment: <InputAdornment position="start">🔍</InputAdornment> }}
+                  sx={{ width: 220 }}
+                />
+                <Tooltip title="Refresh">
+                  <IconButton onClick={loadPlaces}><Refresh /></IconButton>
+                </Tooltip>
+                <Button
+                  variant="contained" startIcon={<Add />}
+                  onClick={() => setPlaceDialog({ open: true, place: null })}
+                  sx={{ borderRadius: 2, textTransform: "none", fontWeight: 600 }}
+                >
+                  Add Place
+                </Button>
+              </Stack>
+            </Stack>
+
+            <Alert severity="info" sx={{ mb: 3, borderRadius: 2 }}>
+              Creating a place automatically provisions its cab landing page as a{" "}
+              <strong>draft</strong>. Publish (and edit copy/SEO) it under CMS → Landing Pages.
+              Renaming a place never changes its published URL. Deleting a place also deletes its page.
+            </Alert>
+
+            {placesLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}><CircularProgress /></Box>
+            ) : places.length === 0 ? (
+              <Paper variant="outlined" sx={{ p: 6, textAlign: "center", borderRadius: 3, borderStyle: "dashed" }}>
+                <Flight sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+                <Typography color="text.secondary" mb={2}>No places configured yet</Typography>
+                <Button variant="contained" startIcon={<Add />} onClick={() => setPlaceDialog({ open: true, place: null })}>
+                  Add First Place
+                </Button>
+              </Paper>
+            ) : (
+              <Stack spacing={2}>
+                {Object.entries(placesByCity).sort(([a], [b]) => a.localeCompare(b)).map(([cityName, cityPlaces]) => (
+                  <Card key={cityName} variant="outlined" sx={{ borderRadius: 2 }}>
+                    <CardHeader
+                      title={
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                          <Chip label={cityName} size="small" color="primary" variant="outlined" />
+                          <Typography variant="caption" color="text.secondary">{cityPlaces.length} places</Typography>
+                        </Stack>
+                      }
+                      sx={{ pb: 0, pt: 1.5 }}
+                    />
+                    <CardContent sx={{ pt: 1 }}>
+                      <TableContainer>
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: "action.hover", fontSize: 12 } }}>
+                              <TableCell>Place</TableCell>
+                              <TableCell>Kind</TableCell>
+                              <TableCell>Code</TableCell>
+                              <TableCell>Coordinates</TableCell>
+                              <TableCell>Landing Page</TableCell>
+                              <TableCell>Status</TableCell>
+                              <TableCell align="right">Actions</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {cityPlaces.map(p => (
+                              <TableRow key={p.id} hover sx={{ opacity: p.is_active ? 1 : 0.6 }}>
+                                <TableCell>
+                                  <Stack direction="row" alignItems="center" spacing={1}>
+                                    {p.kind === "AIRPORT"
+                                      ? <Flight sx={{ fontSize: 14, color: "text.secondary" }} />
+                                      : <Train sx={{ fontSize: 14, color: "text.secondary" }} />}
+                                    <Typography fontWeight={600} fontSize={13}>{p.name}</Typography>
+                                  </Stack>
+                                </TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {p.kind === "AIRPORT" ? "Airport" : "Railway station"}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell>
+                                  {p.code ? (
+                                    <Chip label={p.code} size="small" variant="outlined" sx={{ fontFamily: "monospace", fontSize: 11 }} />
+                                  ) : (
+                                    <Typography variant="caption" color="text.disabled">—</Typography>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {p.latitude != null && p.longitude != null ? (
+                                    <Typography variant="caption" sx={{ fontFamily: "monospace", fontSize: 11, color: "text.secondary" }}>
+                                      {p.latitude.toFixed(4)}, {p.longitude.toFixed(4)}
+                                    </Typography>
+                                  ) : (
+                                    <Chip label="Missing" size="small" color="warning" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {p.page_slug ? (
+                                    <Tooltip title={`/` + p.page_slug}>
+                                      <Chip
+                                        label={p.page_published ? "Published" : "Draft"}
+                                        size="small"
+                                        color={p.page_published ? "success" : "warning"}
+                                        variant="outlined"
+                                        sx={{ fontSize: 10, height: 20 }}
+                                      />
+                                    </Tooltip>
+                                  ) : (
+                                    <Chip label="Not provisioned" size="small" variant="outlined" sx={{ fontSize: 10, height: 20 }} />
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Chip
+                                    label={p.is_active ? "Active" : "Inactive"}
+                                    size="small"
+                                    color={p.is_active ? "success" : "default"}
+                                  />
+                                </TableCell>
+                                <TableCell align="right">
+                                  <Stack direction="row" spacing={0.5} justifyContent="flex-end">
+                                    <Tooltip title="Edit place">
+                                      <IconButton size="small" onClick={() => setPlaceDialog({ open: true, place: p })}>
+                                        <Edit fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete place">
+                                      <IconButton size="small" color="error" onClick={() => deletePlace(p.id, p.name)}>
+                                        <Delete fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </CardContent>
+                  </Card>
+                ))}
+                {filteredPlaces.length === 0 && (
+                  <Typography color="text.secondary" sx={{ py: 4, textAlign: "center" }}>
+                    No places match “{placeFilter}”.
+                  </Typography>
+                )}
+              </Stack>
+            )}
+          </Box>
+        );
+      })()}
+
+      <PlaceDialog
+        open={placeDialog.open}
+        place={placeDialog.place}
+        cities={cities.filter(c => c.is_active)}
+        onClose={() => setPlaceDialog({ open: false, place: null })}
+        onSaved={() => { setPlaceDialog({ open: false, place: null }); loadPlaces(); }}
+        enqueueSnackbar={enqueueSnackbar}
+      />
     </Box>
   );
 }

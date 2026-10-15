@@ -78,7 +78,7 @@ export default function AssignPartnerModal({
       setSelectedPartnerId(null);
       setReasonText("");
     }
-  }, [open]);
+  }, [open, bookingId, cabId]);
 
   // Stable search handler to avoid re-render issues
   const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,6 +92,17 @@ export default function AssignPartnerModal({
     enabled: open,
     staleTime: 30_000,
   });
+
+  // ── Partner-funded coupon lock (migration 0075) ───────────
+  // A redeemed PARTNER_ONLY / PLATFORM_PARTNER coupon can only be fulfilled
+  // by partners in the redemption cohort — the backend rejects others.
+  const { data: couponLock } = useQuery({
+    queryKey: ["cab-coupon-lock", bookingId, cabId],
+    queryFn: () => bookingService.getCouponLock(bookingId, cabId),
+    enabled: open,
+    staleTime: 15_000,
+  });
+  const cohort = couponLock?.locked ? couponLock.eligible_partner_ids : null;
 
   // ── Load vehicles for selected partner ────────────────────
   const { data: vehicles = [], isLoading: vehiclesLoading } = useQuery<AssignableVehicle[]>({
@@ -131,7 +142,8 @@ export default function AssignPartnerModal({
   const busyVehicles = vehicles.filter((v) => v.is_busy);
 
   // ── Eligibility helpers ───────────────────────────────────
-  const getPartnerStatus = (p: AssignablePartner): "eligible" | "no-cab-service" | "no-vehicles" | "all-busy" => {
+  const getPartnerStatus = (p: AssignablePartner): "eligible" | "no-cab-service" | "no-vehicles" | "all-busy" | "not-coupon-partner" => {
+    if (cohort && !cohort.includes(p.id)) return "not-coupon-partner";
     if (!p.has_cab_service) return "no-cab-service";
     if (p.total_vehicles === 0) return "no-vehicles";
     if (p.free_vehicles === 0) return "all-busy";
@@ -143,6 +155,7 @@ export default function AssignPartnerModal({
     "no-cab-service":{ color: "error.main",   icon: <Block sx={{ fontSize: 15 }} />,       label: "No CAB Service" },
     "no-vehicles":   { color: "warning.main", icon: <DirectionsCar sx={{ fontSize: 15 }} />, label: "No Vehicles" },
     "all-busy":      { color: "warning.main", icon: <Warning sx={{ fontSize: 15 }} />,     label: "All Busy" },
+    "not-coupon-partner": { color: "error.main", icon: <Block sx={{ fontSize: 15 }} />,    label: "Not in Coupon" },
   };
 
   const eligibleCount = partners.filter((p) => getPartnerStatus(p) === "eligible").length;
@@ -256,6 +269,13 @@ export default function AssignPartnerModal({
         </Stack>
       </Paper>
 
+      {couponLock?.locked && (
+        <Alert severity="info" icon={<InfoOutlined />} sx={{ mb: 2, borderRadius: 2 }}>
+          <strong>Partner-funded coupon:</strong> this cab redeemed <strong>{couponLock.coupon_code}</strong>
+          {" "}({couponLock.coupon_type === "PARTNER_ONLY" ? "100% partner funded" : "split-funded"}) — only partners
+          that joined the coupon when the customer redeemed it can be assigned.
+        </Alert>
+      )}
       {isPendingReassign && (
         <Alert severity="warning" icon={<SwapHoriz />} sx={{ mb: 2, borderRadius: 2 }}>
           <strong>Reassigning while pending acceptance:</strong> The current partner's request will be auto-declined (reason: ADMIN_REASSIGN) and the new partner will be asked to accept.

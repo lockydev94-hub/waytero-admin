@@ -283,6 +283,9 @@ export interface BlogPostListSummary {
   tags: string[];
   is_published: boolean;
   published_at: string | null;
+  seo_title: string | null;
+  seo_description: string | null;
+  seo_keywords: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -31,6 +31,11 @@ import { blogService, BlogPost } from "../../services/cms.service";
 import { apiErrorMessage } from "../../utils/apiError";
 import MediaUploader, { CropSpec } from "../cms/components/MediaUploader";
 import RichTextEditor from "./components/RichTextEditor";
+import SeoFields from "../../components/forms/SeoFields";
+import {
+  BLOG_SLUG_LIMIT, seoErrorsFor, seoHasError, slugify,
+} from "../../utils/seoValidation";
+import type { SeoValues } from "../../utils/seoValidation";
 
 // Featured image: 16:9 landscape — good for blog cards and hero
 const FEATURED_IMAGE_CROP: CropSpec = {
@@ -45,15 +50,6 @@ const AVATAR_CROP: CropSpec = {
   outputWidth: 256,
   outputHeight: 256,
 };
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .replace(/[\s_]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 300);
-}
 
 export default function BlogEditorPage() {
   const { id } = useParams<{ id: string }>();
@@ -75,6 +71,18 @@ export default function BlogEditorPage() {
   const [seoTitle, setSeoTitle] = useState("");
   const [seoDescription, setSeoDescription] = useState("");
   const [seoKeywords, setSeoKeywords] = useState("");
+
+  const seoValues: SeoValues = { slug, seo_title: seoTitle, seo_description: seoDescription, seo_keywords: seoKeywords };
+  const updateSeo = (patch: Partial<SeoValues>) => {
+    if (patch.slug !== undefined) {
+      setSlug(patch.slug);
+      setSlugManuallyEdited(true);
+    }
+    if (patch.seo_title !== undefined) setSeoTitle(patch.seo_title);
+    if (patch.seo_description !== undefined) setSeoDescription(patch.seo_description);
+    if (patch.seo_keywords !== undefined) setSeoKeywords(patch.seo_keywords);
+  };
+  const slugError = seoErrorsFor(seoValues, "slug", { slugMax: BLOG_SLUG_LIMIT });
 
   // Rich text editor ref
 
@@ -109,7 +117,7 @@ export default function BlogEditorPage() {
     (val: string) => {
       setTitle(val);
       if (!slugManuallyEdited) {
-        setSlug(slugify(val));
+        setSlug(slugify(val, BLOG_SLUG_LIMIT));
       }
     },
     [slugManuallyEdited]
@@ -132,6 +140,14 @@ export default function BlogEditorPage() {
   });
 
   const handleSave = (publish?: boolean) => {
+    if (!slug.trim() || seoHasError(seoValues, { slugMax: BLOG_SLUG_LIMIT })) {
+      enqueueSnackbar(
+        seoErrorsFor(seoValues, "slug", { slugMax: BLOG_SLUG_LIMIT }) ??
+          "SEO fields are invalid — check the slug, title and description",
+        { variant: "error" },
+      );
+      return;
+    }
     const tags = tagsText
       .split(",")
       .map((t) => t.trim())
@@ -221,7 +237,8 @@ export default function BlogEditorPage() {
                   }}
                   fullWidth
                   required
-                  helperText="URL-friendly identifier. Auto-generated from title."
+                  error={Boolean(slugError)}
+                  helperText={slugError ?? "URL-friendly identifier. Auto-generated from title."}
                   placeholder="my-blog-post"
                   InputProps={{
                     endAdornment: (
@@ -230,7 +247,7 @@ export default function BlogEditorPage() {
                           edge="end"
                           size="small"
                           onClick={() => {
-                            setSlug(slugify(title));
+                            setSlug(slugify(title, BLOG_SLUG_LIMIT));
                             setSlugManuallyEdited(false);
                           }}
                         >
@@ -274,37 +291,17 @@ export default function BlogEditorPage() {
               <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
                 SEO Settings
               </Typography>
-              <Stack spacing={2}>
-                <TextField
-                  label="SEO Title"
-                  value={seoTitle}
-                  onChange={(e) => setSeoTitle(e.target.value)}
-                  fullWidth
-                  placeholder="Custom title for search engines"
-                  helperText={`${seoTitle.length}/300 characters`}
-                  inputProps={{ maxLength: 300 }}
-                />
-                <TextField
-                  label="SEO Description"
-                  value={seoDescription}
-                  onChange={(e) => setSeoDescription(e.target.value)}
-                  fullWidth
-                  multiline
-                  rows={2}
-                  placeholder="Meta description for search results"
-                  helperText={`${seoDescription.length}/500 characters`}
-                  inputProps={{ maxLength: 500 }}
-                />
-                <TextField
-                  label="SEO Keywords"
-                  value={seoKeywords}
-                  onChange={(e) => setSeoKeywords(e.target.value)}
-                  fullWidth
-                  placeholder="Comma-separated keywords"
-                  helperText={`${seoKeywords.length}/500 characters`}
-                  inputProps={{ maxLength: 500 }}
-                />
-              </Stack>
+              <SeoFields
+                value={seoValues}
+                onChange={updateSeo}
+                urlBase="waytero.com/blog/"
+                fallbackTitle={title}
+                fallbackDescription={excerpt}
+                showSlug={false}
+                liveEntity={isPublished}
+                originalSlug={post?.slug}
+                slugMax={BLOG_SLUG_LIMIT}
+              />
             </CardContent>
           </Card>
         </Grid>

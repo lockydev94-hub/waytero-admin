@@ -33,6 +33,7 @@ import { useSnackbar } from "notistack";
 
 import { blogService, BlogPostListSummary } from "../../services/cms.service";
 import { apiErrorMessage } from "../../utils/apiError";
+import { seoFromRecord, seoScore } from "../../utils/seoValidation";
 
 export default function BlogListPage() {
   const theme = useTheme();
@@ -318,12 +319,15 @@ export default function BlogListPage() {
                     <TableCell>Author</TableCell>
                     <TableCell>Tags</TableCell>
                     <TableCell align="center">Status</TableCell>
+                    <TableCell align="center">SEO</TableCell>
                     <TableCell>Published</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {posts.map((post) => (
+                  {posts.map((post) => {
+                    const seo = seoScore(seoFromRecord(post));
+                    return (
                     <TableRow
                       key={post.id}
                       hover
@@ -404,6 +408,21 @@ export default function BlogListPage() {
                           color="primary"
                         />
                       </TableCell>
+                      <TableCell align="center">
+                        <Tooltip
+                          title={
+                            seo.missing.length
+                              ? `Missing: ${seo.missing.join(", ")}`
+                              : "SEO complete — slug, title, description and keywords are set"
+                          }
+                        >
+                          <Chip
+                            size="small"
+                            label={`${4 - seo.missing.length}/4`}
+                            color={seo.missing.length === 0 ? "success" : seo.missing.length <= 1 ? "warning" : "default"}
+                          />
+                        </Tooltip>
+                      </TableCell>
                       <TableCell>
                         <Typography variant="caption" color="text.secondary">
                           {post.published_at
@@ -443,7 +462,8 @@ export default function BlogListPage() {
                         </Stack>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>

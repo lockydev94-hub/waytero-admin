@@ -5,6 +5,13 @@
 
 export const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api/v1";
 
+/**
+ * Public website origin — used for "open in website" links so an admin can see
+ * the page they just edited for real. 3002 is the customer-web dev port
+ * (Frontend/customer-web/package.json); set VITE_SITE_URL for staging/prod.
+ */
+export const SITE_URL = import.meta.env.VITE_SITE_URL ?? "http://localhost:3002";
+
 // Cache durations (ms) — Doc: State Management §21-23
 export const CACHE_TTL = {
   SHORT:  30_000,   // 30s — bookings, trips
@@ -111,6 +118,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { key: "cms", label: "Website CMS", icon: "Web", path: "/cms", roles: ["SUPER_ADMIN","ADMIN"], keywords: "cms website content section header footer" },
       { key: "blog", label: "Blog", icon: "Article", path: "/cms/blog", roles: ["SUPER_ADMIN","ADMIN"], keywords: "blog article post content" },
+      { key: "landing-pages", label: "Landing Pages", icon: "Public", path: "/cms/landing-pages", roles: ["SUPER_ADMIN","ADMIN"], keywords: "landing page city state seo cab hotel tour bhubaneswar odisha marketing" },
     ],
   },
   {

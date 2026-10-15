@@ -332,6 +332,7 @@ export interface HotelCategory {
   id: number;
   category_code: string;
   label: string;
+  slug: string | null;
   description: string | null;
   image_url: string | null;
   icon_url: string | null;

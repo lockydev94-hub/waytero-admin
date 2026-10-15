@@ -4,6 +4,15 @@
 // Endpoints: /admin/bookings
 // ============================================================
 import apiClient from "./api";
+import type { CouponType } from "./coupon.service";
+
+export type CabCouponLock = { locked: false } | {
+  locked: true;
+  coupon_id: number;
+  coupon_code: string;
+  coupon_type: CouponType;
+  eligible_partner_ids: number[];
+};
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -402,6 +411,15 @@ export const bookingService = {
     apiClient.get<PendingAcceptanceResponse>(`${base}/pending-acceptance`, { params }).then(r => r.data),
 
   // Cab actions
+  getCouponLock: async (bookingId: number, cabId: number): Promise<CabCouponLock> => {
+    const { data } = await apiClient.get<CabCouponLock>(`${base}/${bookingId}/cab/${cabId}/coupon-lock`);
+    if (!data || (data.locked !== false && data.locked !== true)
+      || (data.locked && (!Array.isArray(data.eligible_partner_ids) || !data.eligible_partner_ids.every(id => Number.isInteger(id) && id > 0)))) {
+      throw new Error("Unable to verify coupon partner eligibility");
+    }
+    return data;
+  },
+
   assignPartner:      (bookingId: number, cabId: number, partner_id: number) =>
     apiClient.post(`${base}/${bookingId}/cab/${cabId}/assign-partner`, { partner_id }).then(r => r.data),
 

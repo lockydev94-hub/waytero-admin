@@ -22,6 +22,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import { tourService, TourPackage, TourBooking, TourStats } from "../../services/tour.service";
 import PackageEditor from "../../components/tours/PackageEditor";
+import { seoFromRecord, seoScore } from "../../utils/seoValidation";
 
 // ── Status config ─────────────────────────────────────────────
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: any }> = {
@@ -268,6 +269,7 @@ export default function ToursPage() {
                       <TableCell sx={{ fontWeight: 800 }}>DURATION</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>PRICE FROM</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>STATUS</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 800 }}>SEO</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 800 }}>ACTIONS</TableCell>
                     </TableRow>
                   </TableHead>
@@ -275,6 +277,7 @@ export default function ToursPage() {
                     {filteredPackages.map(p => {
                       const startingPrice = p.pricing?.length ? Math.min(...p.pricing.map(x => x.package_price)) : 0;
                       const primaryImg = p.media?.find(m => m.is_primary)?.media_url || p.media?.[0]?.media_url;
+                      const seo = seoScore(seoFromRecord(p));
                       return (
                         <TableRow key={p.id} hover sx={{ "&:last-child td": { border: 0 } }}>
                           <TableCell>
@@ -299,6 +302,21 @@ export default function ToursPage() {
                                 <Tooltip title={p.rejection_reason}><Chip size="small" label="Reason" color="error" variant="outlined" sx={{ fontSize: 10 }} /></Tooltip>
                               )}
                             </Stack>
+                          </TableCell>
+                          <TableCell align="center">
+                            <Tooltip
+                              title={
+                                seo.missing.length
+                                  ? `Missing: ${seo.missing.join(", ")}`
+                                  : "SEO complete — slug, title, description and keywords are set"
+                              }
+                            >
+                              <Chip
+                                size="small"
+                                label={`${4 - seo.missing.length}/4`}
+                                color={seo.missing.length === 0 ? "success" : seo.missing.length <= 1 ? "warning" : "default"}
+                              />
+                            </Tooltip>
                           </TableCell>
                           <TableCell align="right">
                             <Stack direction="row" spacing={0.5} justifyContent="flex-end">

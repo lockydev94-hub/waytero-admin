@@ -13,7 +13,7 @@ import {
   TableCell, TableBody, TableContainer, Paper, Tooltip,
   CircularProgress, Alert, Stack, Grid, Divider,
   InputAdornment, Tabs, Tab, Badge, alpha, useTheme,
-  Autocomplete, Collapse,
+  Autocomplete, Collapse, Pagination,
 } from "@mui/material";
 import {
   Add, Edit, Delete, Refresh, LocalOffer, ContentCopy,
@@ -23,7 +23,9 @@ import {
   ToggleOn, ToggleOff, Visibility, Close,
 } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
-import { couponService, Coupon, CouponCreatePayload, CouponUsageRecord } from "../../services/coupon.service";
+import { useQuery } from "@tanstack/react-query";
+import { couponService, Coupon, CouponCreatePayload, CouponUsageRecord, CouponType, COUPON_TYPE_LABELS } from "../../services/coupon.service";
+import { partnerService } from "../../services/partner.service";
 import CouponViewModal from "./CouponViewModal";
 import { settingsService, City, VehicleCategory } from "../../services/settings.service";
 import { format, isAfter, isBefore, parseISO } from "date-fns";
@@ -63,6 +65,9 @@ function emptyForm(): CouponCreatePayload {
   const next  = new Date(Date.now() + 30 * 86400000).toISOString().split("T")[0];
   return {
     coupon_code: "",
+    coupon_type: "PLATFORM",
+    platform_share_percent: null,
+    partner_ids: [],
     title: "",
     description: "",
     apply_to: "ALL",
@@ -126,6 +131,41 @@ export default function CouponsPage() {
 
   // Form tab
   const [formTab, setFormTab] = useState(0);
+  const [existingPartnerIds, setExistingPartnerIds] = useState<number[]>([]);
+  const [partnerPage, setPartnerPage] = useState(1);
+  const [partnerSearch, setPartnerSearch] = useState("");
+  const [partnerServiceFilter, setPartnerServiceFilter] = useState("");
+  const [partnerLabels, setPartnerLabels] = useState<Record<number, string>>({});
+  const partnerOptions = useQuery({
+    queryKey: ["coupon-partner-options", partnerPage],
+    enabled: dialogOpen && formTab === 4,
+    queryFn: async () => {
+      const page = await partnerService.list({ status: "ACTIVE", page: partnerPage, page_size: 20 });
+      const items = await Promise.all(page.items.map(async partner => {
+        try {
+          const detail = await partnerService.getDetail(partner.id);
+          return { ...partner, status: detail.status, services: detail.services };
+        } catch {
+          return { ...partner, services: null };
+        }
+      }));
+      return { ...page, items };
+    },
+  });
+  const scopeServices = form.apply_to === "ALL" ? SERVICE_TYPES : [form.apply_to];
+  const allowedServices = serviceRules.length
+    ? scopeServices.filter(service => serviceRules.some(rule => rule.service_type === service))
+    : scopeServices;
+  const visiblePartners = (partnerOptions.data?.items ?? []).filter(partner => {
+    const search = partnerSearch.trim().toLowerCase();
+    const matchesSearch = [partner.business_name, partner.contact_person, partner.partner_code, partner.mobile_number, String(partner.id)]
+      .some(value => value?.toLowerCase().includes(search));
+    return matchesSearch && (!partnerServiceFilter || partner.services?.some(service => service.is_active && service.service_type === partnerServiceFilter));
+  });
+  const previewPlatformPercent = form.coupon_type === "PLATFORM" ? 100
+    : form.coupon_type === "PARTNER_ONLY" ? 0 : form.platform_share_percent;
+  const validPreview = previewPlatformPercent != null && Number.isInteger(previewPlatformPercent)
+    && (form.coupon_type !== "PLATFORM_PARTNER" || (previewPlatformPercent >= 1 && previewPlatformPercent <= 99));
 
   // ── Load data ──
   const load = useCallback(async () => {
@@ -160,6 +200,11 @@ export default function CouponsPage() {
   // ── Open dialog for create / edit ──
   function openCreate() {
     setEditId(null);
+    setExistingPartnerIds([]);
+    setPartnerPage(1);
+    setPartnerSearch("");
+    setPartnerServiceFilter("");
+    setPartnerLabels({});
     const f = emptyForm();
     setForm(f);
     setCityRules([]);
@@ -172,8 +217,17 @@ export default function CouponsPage() {
 
   function openEdit(c: Coupon) {
     setEditId(c.id);
+    const activePartnerIds = (c.partner_rules ?? []).filter(rule => rule.is_active).map(rule => rule.partner_id);
+    setExistingPartnerIds(activePartnerIds);
+    setPartnerPage(1);
+    setPartnerSearch("");
+    setPartnerServiceFilter("");
+    setPartnerLabels({});
     setForm({
       coupon_code: c.coupon_code,
+      coupon_type: c.coupon_type ?? "PLATFORM",
+      platform_share_percent: c.coupon_type === "PLATFORM_PARTNER" ? c.platform_share_percent : null,
+      partner_ids: activePartnerIds,
       title: c.title,
       description: c.description ?? "",
       apply_to: c.apply_to,
@@ -215,6 +269,11 @@ export default function CouponsPage() {
     if (form.valid_from && form.valid_to && form.valid_from > form.valid_to) e.valid_to = "Must be after start date";
     if (form.is_city_specific && cityRules.length === 0) e.city_rules = "Add at least one city";
     if (form.is_customer_specific && !mobilesText.trim()) e.customer_mobiles = "Enter at least one mobile number";
+    if (form.coupon_type === "PLATFORM_PARTNER" && (
+      form.platform_share_percent == null || !Number.isInteger(form.platform_share_percent)
+      || form.platform_share_percent < 1 || form.platform_share_percent > 99
+    )) e.platform_share_percent = "Enter a whole percentage from 1 to 99";
+    if (form.coupon_type !== "PLATFORM" && form.partner_ids.length === 0) e.partner_ids = "Select at least one active partner in the Partners tab";
     setFormErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -225,6 +284,8 @@ export default function CouponsPage() {
     const mobiles = mobilesText.split(/[\n,]+/).map(m => m.trim()).filter(Boolean);
     const payload: CouponCreatePayload = {
       ...form,
+      platform_share_percent: form.coupon_type === "PLATFORM_PARTNER" ? form.platform_share_percent : null,
+      partner_ids: Array.from(new Set([...existingPartnerIds, ...form.partner_ids])),
       coupon_code: form.coupon_code.toUpperCase().trim(),
       service_rules: serviceRules,
       city_rules: cityRules.map(r => ({ city_id: r.city_id, max_discount_override: r.max_discount_override })),
@@ -396,6 +457,7 @@ export default function CouponsPage() {
                 <TableRow sx={{ "& th": { fontWeight: 700, bgcolor: alpha(theme.palette.primary.main, 0.04), borderBottom: "2px solid", borderColor: "divider" } }}>
                   <TableCell>Code / Title</TableCell>
                   <TableCell>Applies To</TableCell>
+                  <TableCell>Funding</TableCell>
                   <TableCell>Discount</TableCell>
                   <TableCell>Validity</TableCell>
                   <TableCell align="center">Usage</TableCell>
@@ -426,6 +488,12 @@ export default function CouponsPage() {
                       </TableCell>
                       <TableCell>
                         <Chip label={c.apply_to} size="small" color={APPLY_COLOR[c.apply_to] ?? "default"} variant="outlined" />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{COUPON_TYPE_LABELS[c.coupon_type ?? "PLATFORM"]}</Typography>
+                        {c.coupon_type === "PLATFORM_PARTNER" && (
+                          <Typography variant="caption">Platform {c.platform_share_percent}% / Partner {100 - (c.platform_share_percent ?? 0)}%</Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" fontWeight={600}>{fmtDiscount(c)}</Typography>
@@ -534,6 +602,7 @@ export default function CouponsPage() {
             <Tab label="Service Rules" />
             <Tab label="City Rules" disabled={!form.is_city_specific} />
             <Tab label="Customers" disabled={!form.is_customer_specific} />
+            <Tab label={`Partners (${form.partner_ids.length})`} />
           </Tabs>
         </Box>
 
@@ -541,6 +610,42 @@ export default function CouponsPage() {
           {/* ── Tab 0: Basic ── */}
           {formTab === 0 && (
             <Grid container spacing={2.5} sx={{ mt: 0.5 }}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Coupon Funding</InputLabel>
+                  <Select value={form.coupon_type} label="Coupon Funding" onChange={e => {
+                    const couponType = e.target.value as CouponType;
+                    setForm(f => ({ ...f, coupon_type: couponType, platform_share_percent: couponType === "PLATFORM_PARTNER" ? 50 : null }));
+                  }}>
+                    {(Object.keys(COUPON_TYPE_LABELS) as CouponType[]).map(type => (
+                      <MenuItem key={type} value={type}>{COUPON_TYPE_LABELS[type]}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              {form.coupon_type === "PLATFORM_PARTNER" && (
+                <Grid item xs={12} sm={6}>
+                  <TextField label="Platform share (%)" fullWidth size="small" type="number"
+                    value={form.platform_share_percent ?? ""}
+                    onChange={e => setForm(f => ({ ...f, platform_share_percent: e.target.value === "" ? null : Number(e.target.value) }))}
+                    inputProps={{ min: 1, max: 99, step: 1 }}
+                    error={!!formErrors.platform_share_percent}
+                    helperText={formErrors.platform_share_percent || "Whole percentage, 1–99; partner funds the remainder"}
+                  />
+                </Grid>
+              )}
+              <Grid item xs={12}>
+                <Alert severity="info">
+                  Commission is calculated before the coupon discount. The partner-funded share is deducted from partner payout.
+                  {editId && " Funding edits apply only to new bookings; existing bookings keep their original funding."}
+                  {validPreview && (
+                    <Typography variant="body2" mt={1}>
+                      Hypothetical example only (not real revenue): for a ₹100 coupon discount, platform funds ₹{previewPlatformPercent} and partner funds ₹{100 - previewPlatformPercent!}.
+                    </Typography>
+                  )}
+                </Alert>
+                {formErrors.partner_ids && <Alert severity="error" sx={{ mt: 1 }}>{formErrors.partner_ids}</Alert>}
+              </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
                   label="Coupon Code *" fullWidth size="small"
@@ -799,6 +904,72 @@ export default function CouponsPage() {
               />
             </Box>
           )}
+          {formTab === 4 && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="info">
+                Select active partners with an active service matching this coupon. Service and booking eligibility are validated by the server.
+                Existing partners cannot be deselected here. Close this form and use View Details → Partners & declines for audited removal after a genuine decline with available cabs.
+                No-cab, unknown availability or timeout events do not qualify.
+              </Alert>
+              {form.coupon_type === "PLATFORM" && <Alert severity="info">Platform funding does not require partner selection. Existing partner history is preserved.</Alert>}
+              {formErrors.partner_ids && <Alert severity="error">{formErrors.partner_ids}</Alert>}
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                {form.partner_ids.map(id => (
+                  <Chip key={id} label={`${partnerLabels[id] ?? `Partner #${id}`}${existingPartnerIds.includes(id) ? " (existing)" : " (new)"}`}
+                    onDelete={existingPartnerIds.includes(id) || saving ? undefined : () => setForm(f => ({ ...f, partner_ids: f.partner_ids.filter(pid => pid !== id) }))}
+                  />
+                ))}
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField size="small" label="Search partners on this page" value={partnerSearch} onChange={e => setPartnerSearch(e.target.value)} fullWidth />
+                <FormControl size="small" sx={{ minWidth: 160 }}>
+                  <InputLabel>Active service</InputLabel>
+                  <Select label="Active service" value={partnerServiceFilter} onChange={e => setPartnerServiceFilter(e.target.value)}>
+                    <MenuItem value="">All services</MenuItem>
+                    {SERVICE_TYPES.map(service => <MenuItem key={service} value={service}>{service}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              </Stack>
+              <Typography variant="caption" color="text.secondary">Search and service filters apply to the current page of active partners; selections persist across pages.</Typography>
+              {partnerOptions.isError ? (
+                <Alert severity="error" action={<Button onClick={() => partnerOptions.refetch()}>Retry</Button>}>Failed to load partners.</Alert>
+              ) : partnerOptions.isFetching ? <CircularProgress size={24} /> : (
+                <>
+                  {partnerOptions.data?.items.some(partner => partner.services === null) && (
+                    <Alert severity="warning" action={<Button onClick={() => partnerOptions.refetch()}>Retry</Button>}>Some service details could not be loaded. Those partners cannot be added.</Alert>
+                  )}
+                  {visiblePartners.length === 0 && <Typography color="text.secondary">No matching partners on this page.</Typography>}
+                  {visiblePartners.map(partner => {
+                    const services = partner.services?.filter(service => service.is_active).map(service => service.service_type) ?? [];
+                    const eligible = partner.status === "ACTIVE" && services.some(service => allowedServices.includes(service));
+                    const selected = form.partner_ids.includes(partner.id);
+                    const name = partner.business_name || partner.contact_person || `Partner #${partner.id}`;
+                    return (
+                      <Box key={partner.id} display="flex" alignItems="center" justifyContent="space-between" gap={2}>
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>{name} · #{partner.id}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            {partner.status} · {partner.services === null ? "Service availability unknown" : services.join(", ") || "No active services"}
+                          </Typography>
+                        </Box>
+                        <Button size="small" disabled={selected || !eligible || saving || form.coupon_type === "PLATFORM"}
+                          onClick={() => {
+                            setPartnerLabels(labels => ({ ...labels, [partner.id]: name }));
+                            setForm(f => ({ ...f, partner_ids: Array.from(new Set([...f.partner_ids, partner.id])) }));
+                          }}>
+                          {selected ? "Selected" : "Add"}
+                        </Button>
+                      </Box>
+                    );
+                  })}
+                </>
+              )}
+              {partnerOptions.data && (
+                <Pagination page={partnerPage} count={Math.max(1, Math.ceil(partnerOptions.data.total / partnerOptions.data.page_size))}
+                  onChange={(_, page) => setPartnerPage(page)} disabled={partnerOptions.isFetching} />
+              )}
+            </Stack>
+          )}
         </DialogContent>
 
         <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
@@ -861,6 +1032,15 @@ export default function CouponsPage() {
         open={viewOpen}
         coupon={viewCoupon}
         onClose={() => { setViewOpen(false); }}
+        onPartnersChanged={couponId => {
+          couponService.get(couponId).then(updated => {
+            setViewCoupon(current => current?.id === couponId ? updated : current);
+            setCoupons(current => current.map(c => c.id === couponId ? updated : c));
+          }).catch(() => {
+            setViewOpen(false);
+            load();
+          });
+        }}
         cities={cities}
         vehicleCategories={categories}
       />
