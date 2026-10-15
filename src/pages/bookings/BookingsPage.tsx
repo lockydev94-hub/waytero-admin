@@ -19,7 +19,7 @@ import {
   DirectionsCar, Hotel, Tour, Search, Refresh, OpenInNew,
   FilterList, PersonAdd, AssignmentInd, CheckCircle, Cancel,
   AccessTime, AttachMoney, CalendarMonth, LocationCity,
-  TrendingUp, PendingActions, Assessment, EventBusy, Visibility,
+  TrendingUp, PendingActions, Assessment, EventBusy, Visibility, LocalOffer,
 } from "@mui/icons-material";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bookingService, BookingListItem, BookingStats, PaginatedBookings } from "../../services/booking.service";
@@ -351,6 +351,12 @@ export default function BookingsPage() {
                       <Typography variant="caption" color="text.disabled">
                         {format(new Date(item.created_at), "dd MMM yy")}
                       </Typography>
+                      {item.offer_title && (
+                        <Tooltip title={`Booked via offer: ${item.offer_title}`}>
+                          <Chip size="small" variant="outlined" color="secondary" icon={<LocalOffer sx={{ fontSize: 14 }} />}
+                            label="Offer" sx={{ display: "block", mt: 0.5, height: 20, fontSize: 11, "& .MuiChip-icon": { ml: "6px" } }} />
+                        </Tooltip>
+                      )}
                     </TableCell>
                     <TableCell sx={{ py: 1.5 }}>
                       <Typography variant="body2" fontWeight={600}>{item.customer_name || "—"}</Typography>

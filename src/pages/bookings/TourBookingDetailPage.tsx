@@ -30,6 +30,7 @@ import CompleteTourModal from "./modals/CompleteTourModal";
 import {
   TourAdvanceModal, TourFleetModal, TourEditTripModal, TourChargeModal,
 } from "./modals/TourManageModals";
+import OfferBadge from "../../components/common/OfferBadge";
 
 // ── Status config ─────────────────────────────────────────────
 const STATUS_META: Record<string, { label: string; color: string; bg: string; step: number }> = {
@@ -171,6 +172,7 @@ export default function TourBookingDetailPage() {
               <Typography variant="body2" color="text.secondary" fontFamily="monospace">{booking.booking_number}</Typography>
               <Typography variant="body2" color="text.secondary">·</Typography>
               <Chip label={statusCfg.label} size="small" sx={{ bgcolor: statusCfg.bg, color: statusCfg.color, fontWeight: 700 }} />
+              <OfferBadge offerTitle={booking.offer_title} offerSlug={booking.offer_slug} />
               {booking.master_booking_number && <Chip label={`Master ${booking.master_booking_number}`} size="small" variant="outlined" onClick={() => navigate(`/bookings/${bId}`)} sx={{ cursor: "pointer" }} />}
             </Stack>
           </Box>

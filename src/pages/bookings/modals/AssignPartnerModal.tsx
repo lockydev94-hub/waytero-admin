@@ -45,6 +45,8 @@ interface Props {
    * assignment gets auto-closed with reason ADMIN_REASSIGN).
    */
   context?: "ASSIGN" | "REASSIGN" | "REASSIGN_PENDING";
+  /** Marketing attribution — prepends a note to the coupon-lock alert. */
+  offerTitle?: string | null;
 }
 
 const STEPS = ["Select Partner", "Preview & Confirm"];
@@ -52,7 +54,7 @@ const STEPS = ["Select Partner", "Preview & Confirm"];
 export default function AssignPartnerModal({
   open, onClose, bookingId, cabId, cabStatus,
   cityId, cabBookingNumber, vehicleCategoryId, vehicleCategoryName, tripType,
-  context,
+  context, offerTitle,
 }: Props) {
   const theme = useTheme();
   const [step, setStep] = useState(0);
@@ -271,6 +273,11 @@ export default function AssignPartnerModal({
 
       {couponLock?.locked && (
         <Alert severity="info" icon={<InfoOutlined />} sx={{ mb: 2, borderRadius: 2 }}>
+          {offerTitle && (
+            <>
+              <strong>Booked via offer {offerTitle}.</strong>{" "}
+            </>
+          )}
           <strong>Partner-funded coupon:</strong> this cab redeemed <strong>{couponLock.coupon_code}</strong>
           {" "}({couponLock.coupon_type === "PARTNER_ONLY" ? "100% partner funded" : "split-funded"}) — only partners
           that joined the coupon when the customer redeemed it can be assigned.

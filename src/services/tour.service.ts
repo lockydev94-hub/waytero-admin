@@ -79,6 +79,9 @@ export interface TourBooking {
   payment_status: string;
   booking_status: string;
   special_requests?: string | null;
+  offer_id?: number | null;
+  offer_title?: string | null;
+  offer_slug?: string | null;
   participants?: Array<{ id: number; participant_name: string; mobile?: string | null; age?: number | null; gender?: string | null }>;
   package?: {
     id: number;

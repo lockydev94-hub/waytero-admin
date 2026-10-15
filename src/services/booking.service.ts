@@ -54,6 +54,10 @@ export interface CabBookingOut {
   /** How the customer paid — UPI / CASH / WALLET / ONLINE. Required before
    *  the invoice can be downloaded. */
   payment_mode: string | null;
+  // ── Offer attribution (marketing only — the coupon holds the money) ──
+  offer_id?: number | null;
+  offer_title?: string | null;
+  offer_slug?: string | null;
 }
 
 export interface PendingAcceptanceItem {
@@ -102,6 +106,9 @@ export interface BookingListItem {
   cab_status: string | null;
   hotel_status: string | null;
   tour_status: string | null;
+  offer_id?: number | null;
+  offer_title?: string | null;
+  offer_slug?: string | null;
   created_at: string;
 }
 
@@ -146,6 +153,9 @@ export interface TourBookingOut {
   payment_status: string;
   booking_status: string;
   special_requests: string | null;
+  offer_id?: number | null;
+  offer_title?: string | null;
+  offer_slug?: string | null;
 }
 
 export interface HotelAdvancePayment {
@@ -252,6 +262,9 @@ export interface HotelBookingOut {
   // ── Billing / custody (migration 0035) ──
   coupon_code?: string | null;
   coupon_discount?: number | null;
+  offer_id?: number | null;
+  offer_title?: string | null;
+  offer_slug?: string | null;
   overtime_hours?: number | null;
   overtime_charge?: number | null;
   invoice_number?: string | null;

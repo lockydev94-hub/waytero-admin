@@ -42,6 +42,7 @@ import GenerateInvoiceModal from "./modals/GenerateInvoiceModal";
 import EditHotelBookingModal from "./modals/EditHotelBookingModal";
 import SwitchHotelModal from "./modals/SwitchHotelModal";
 import SplitStayModal from "./modals/SplitStayModal";
+import OfferBadge from "../../components/common/OfferBadge";
 
 // ── Status config ─────────────────────────────────────────────
 const HOTEL_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; step: number }> = {
@@ -274,6 +275,7 @@ export default function HotelBookingDetailPage() {
               <Typography variant="h5" fontWeight={800}>Hotel Booking Detail</Typography>
               <Chip label={booking.booking_number} variant="outlined" size="small" sx={{ fontFamily: "monospace", fontWeight: 700 }} />
               <Chip label={bStatusCfg?.label || booking.booking_status} color={bStatusCfg?.color || "default"} size="small" />
+              <OfferBadge offerTitle={hb?.offer_title} offerSlug={hb?.offer_slug} />
             </Stack>
             <Typography variant="body2" color="text.secondary" mt={0.25}>
               Hotel: {hb.booking_number} · {booking.customer_name}

@@ -37,6 +37,7 @@ import EditCabDetailsModal from "./modals/EditCabDetailsModal";
 import CollectAdvanceModal from "./modals/CollectAdvanceModal";
 import VoidAdvanceModal from "./modals/VoidAdvanceModal";
 import { advanceService, AdvanceEligibility } from "../../services/advance.service";
+import OfferBadge from "../../components/common/OfferBadge";
 
 // ── Cab Status Config ─────────────────────────────────────────
 const CAB_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; step: number }> = {
@@ -217,6 +218,7 @@ export default function CabBookingDetailPage() {
               <Typography variant="h5" fontWeight={800}>Cab Booking Detail</Typography>
               <Chip label={booking.booking_number} variant="outlined" size="small" sx={{ fontFamily: "monospace", fontWeight: 700 }} />
               <Chip label={bStatusCfg?.label || booking.booking_status} color={bStatusCfg?.color || "default"} size="small" />
+              {cab && <OfferBadge offerTitle={cab.offer_title} offerSlug={cab.offer_slug} />}
             </Stack>
             <Typography variant="body2" color="text.secondary" mt={0.25}>
               Cab: {cab.booking_number} · {cab.trip_type} · {booking.customer_name}
@@ -702,6 +704,7 @@ export default function CabBookingDetailPage() {
         vehicleCategoryName={cab.vehicle_category_name}
         tripType={cab.trip_type}
         context={isAwaitingAcceptance ? "REASSIGN_PENDING" : canReassignPartner ? "REASSIGN" : "ASSIGN"}
+        offerTitle={cab.offer_title}
       />
       <AssignDriverModal
         open={modal === "assign-driver"}
