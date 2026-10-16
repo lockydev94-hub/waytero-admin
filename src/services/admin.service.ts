@@ -6,6 +6,7 @@
 // Base: /admin/*
 // ============================================================
 import apiClient from "./api";
+import { STAFF_DOC_MAX_BYTES, uploadProblem } from "../utils/mediaLimits";
 
 // ── Pagination wrapper ───────────────────────────────────────
 export interface PagedResponse<T> {
@@ -367,6 +368,8 @@ export const staffService = {
     apiClient.post<StaffUser>(`/admin/staff/${id}/generate-id-card`, { notes }).then((r) => r.data),
 
   uploadPhoto: (id: string, file: File): Promise<StaffUser> => {
+    // This endpoint's own cap is 5 MB (backend upload_staff_photo), which is
+    // tighter than the shared image limit — let the server answer, not us.
     const fd = new FormData();
     fd.append("file", file);
     return apiClient
@@ -383,6 +386,11 @@ export const staffService = {
     document_name?: string,
     notes?: string
   ): Promise<{ documents: StaffDocument[]; uploaded: { id: string; file_url: string } }> => {
+    // The staff-document endpoint enforces 10 MB (api_dashboard.py), tighter
+    // than the shared document limit — reject here so the admin gets the same
+    // number the picker showed.
+    const problem = uploadProblem(file, "document", STAFF_DOC_MAX_BYTES);
+    if (problem) throw new Error(problem);
     const fd = new FormData();
     fd.append("file", file);
     fd.append("document_type", document_type);

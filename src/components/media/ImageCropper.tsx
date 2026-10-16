@@ -124,7 +124,7 @@ export default function AdvancedImageCropper({
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
 
-  const stageRef = useRef<HTMLDivElement>(null);
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const exportCanvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
@@ -174,10 +174,12 @@ export default function AdvancedImageCropper({
   }, [open, src]);
 
   // ── Measure stage ───────────────────────────────────────────
+  // The stage lives in a Dialog portal, so it is not in the DOM during the
+  // first passive-effect pass. Tracking the node as state re-runs this once
+  // MUI mounts it — otherwise stageSize stays 0 and no crop is ever seeded.
   useEffect(() => {
-    if (!open) return;
-    const el = stageRef.current;
-    if (!el) return;
+    const el = stageEl;
+    if (!open || !el) return;
     const update = () => {
       const rect = el.getBoundingClientRect();
       setStageSize({
@@ -193,7 +195,7 @@ export default function AdvancedImageCropper({
       ro.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [open]);
+  }, [open, stageEl]);
 
   // ── When image+stage settle, seed zoom / crop ──────────────
   useEffect(() => {
@@ -250,7 +252,6 @@ export default function AdvancedImageCropper({
     let raf = 0;
     const draw = () => {
       const canvas = previewCanvasRef.current;
-      const stageEl = stageRef.current;
       const img = imageRef.current;
       if (!canvas || !stageEl || !img || !imgSize) return;
       const rect = stageEl.getBoundingClientRect();
@@ -283,15 +284,15 @@ export default function AdvancedImageCropper({
     };
     schedule();
     let ro: ResizeObserver | null = null;
-    if (stageRef.current) {
+    if (stageEl) {
       ro = new ResizeObserver(schedule);
-      ro.observe(stageRef.current);
+      ro.observe(stageEl);
     }
     return () => {
       cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [imgSize, zoom, pan.x, pan.y, open]);
+  }, [imgSize, zoom, pan.x, pan.y, open, stageEl]);
 
   // ── Pointer handlers ────────────────────────────────────────
   const clampCropToStage = (c: CropRect, s: StageSize): CropRect => {
@@ -429,7 +430,6 @@ export default function AdvancedImageCropper({
       enqueueSnackbar("Image not ready — please wait for it to load", { variant: "warning" });
       return;
     }
-    const stageEl = stageRef.current;
     const rect = stageEl ? stageEl.getBoundingClientRect() : null;
     const cssW = Math.max(1, Math.round(rect?.width || stageSize.w || 960));
     const cssH = Math.max(1, Math.round(rect?.height || stageSize.h || 640));
@@ -521,7 +521,7 @@ export default function AdvancedImageCropper({
       </DialogTitle>
       <DialogContent dividers sx={{ p: 0, bgcolor: "#0F172A" }}>
         <Box
-          ref={stageRef}
+          ref={setStageEl}
           onPointerDown={(e) => onPointerDown(e)}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

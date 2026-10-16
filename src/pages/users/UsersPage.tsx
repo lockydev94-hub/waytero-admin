@@ -35,6 +35,8 @@ import {
 import { settingsService, MediaUploadResult } from "../../services/settings.service";
 import { MediaLibraryItem } from "../../services/media.service";
 import MediaPicker from "../../components/media/MediaPicker";
+import { STAFF_DOC_MAX_BYTES, mediaHint } from "../../utils/mediaLimits";
+import { apiErrorMessage } from "../../utils/apiError";
 import { CACHE_TTL } from "../../constants";
 
 // ── Constants ─────────────────────────────────────────────────
@@ -260,6 +262,7 @@ function StaffDocumentUploader({ staffId, documents, uploading, onUpload }: {
         uploadFolder="waytero/users"
         kind="image"
         assetType="document"
+        maxBytes={STAFF_DOC_MAX_BYTES}
         accept={pickerAccept}
         title={activeType ? `Upload ${activeType.label}` : "Upload document"}
       />
@@ -471,7 +474,7 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
                 </Avatar>
                 <Box sx={{ flex: 1 }}>
                   <Typography fontWeight={700} fontSize={13} gutterBottom>Profile Photo</Typography>
-                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>JPG / PNG / WebP · Max 5 MB</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>{mediaHint("photo")}</Typography>
                   {isEdit
                     ? <Button size="small" variant="outlined" startIcon={<CloudUpload fontSize="small" />} onClick={() => setPhotoPickerOpen(true)}>{photoUrl ? "Replace Photo" : "Upload Photo"}</Button>
                     : <Alert severity="info" sx={{ py: 0.5, fontSize: 11 }}>Save first, then upload photo.</Alert>}
@@ -655,13 +658,13 @@ function StaffUploadsModal({ staff, onClose, onStaffUpdated }: {
       onStaffUpdated({ ...staff, profile_image_url: url });
       qc.invalidateQueries({ queryKey: ["admin-staff"] });
       enqueueSnackbar("Photo updated", { variant: "success" });
-    } catch (err: any) { enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" }); }
+    } catch (err: any) { enqueueSnackbar(apiErrorMessage(err, "Upload failed"), { variant: "error" }); }
     finally { setPhotoUploading(false); }
   };
   const handleDocUpload = async (file: File, docType: string) => {
     setDocUploading(docType);
     try { const r = await staffService.uploadDocument(staff.id, file, docType); setDocuments(r.documents); enqueueSnackbar("Document uploaded", { variant: "success" }); }
-    catch (err: any) { enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" }); }
+    catch (err: any) { enqueueSnackbar(apiErrorMessage(err, "Upload failed"), { variant: "error" }); }
     finally { setDocUploading(null); }
   };
 
@@ -693,7 +696,9 @@ function StaffUploadsModal({ staff, onClose, onStaffUpdated }: {
         )}
         {tab === 1 && (
           <Box>
-            <Alert severity="info" sx={{ mb: 2.5, fontSize: 12 }}>Files stored securely on Cloudinary (max 10 MB each).</Alert>
+            <Alert severity="info" sx={{ mb: 2.5, fontSize: 12 }}>
+              Files stored securely on Cloudinary ({mediaHint("document", STAFF_DOC_MAX_BYTES)}).
+            </Alert>
             <StaffDocumentUploader staffId={staff.id} documents={documents} uploading={docUploading} onUpload={handleDocUpload} />
           </Box>
         )}

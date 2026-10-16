@@ -26,6 +26,7 @@ import MediaPicker from "../../../components/media/MediaPicker";
 import type { MediaLibraryItem } from "../../../services/media.service";
 import { uploadMedia } from "../../../services/settings.service";
 import { apiErrorMessage } from "../../../utils/apiError";
+import { mediaHint, uploadProblem } from "../../../utils/mediaLimits";
 import { OutputFormat } from "./ImageCropper";
 
 export type CmsMediaKind = "image" | "video" | "logo" | "icon" | "payment_icon";
@@ -162,14 +163,6 @@ const ASSET_TYPE_FOR: Record<CmsMediaKind, "logo" | "general"> = {
   payment_icon: "general",
 };
 
-const ACCEPT_FOR: Record<CmsMediaKind, string> = {
-  image: "image/png,image/jpeg,image/webp,image/svg+xml",
-  video: "video/mp4,video/webm,video/quicktime",
-  logo: "image/png,image/jpeg,image/webp,image/svg+xml",
-  icon: "image/png,image/jpeg,image/webp,image/svg+xml",
-  payment_icon: "image/png,image/jpeg,image/webp,image/svg+xml",
-};
-
 export default function MediaUploader({
   value,
   onChange,
@@ -208,6 +201,11 @@ export default function MediaUploader({
   }, [slot, crop]);
 
   const upload = async (file: File) => {
+    const tooBig = uploadProblem(file, kind);
+    if (tooBig) {
+      enqueueSnackbar(tooBig, { variant: "error" });
+      return;
+    }
     // A dropped file skips the crop modal, so it is measured here instead —
     // otherwise the drop zone would be a way to bypass the slot rules.
     if (strict && geometry && !isVideo && file.type !== "image/svg+xml") {
@@ -362,11 +360,9 @@ export default function MediaUploader({
             <Typography variant="body2" fontWeight={600}>
               {label}
             </Typography>
-            {hint && (
-              <Typography variant="caption" color="text.secondary">
-                {hint}
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.secondary">
+              {hint ? `${hint} · ${mediaHint(kind)}` : mediaHint(kind)}
+            </Typography>
             {crop && kind !== "video" && (
               <Typography variant="caption" color="primary.main">
                 Will be cropped to {crop.outputWidth}×{crop.outputHeight} before upload
@@ -398,7 +394,6 @@ export default function MediaUploader({
           kind={kind}
           assetType={ASSET_TYPE_FOR[kind]}
           uploadFolder={folder}
-          accept={ACCEPT_FOR[kind]}
           crop={pickerCrop}
         />
       )}

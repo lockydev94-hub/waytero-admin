@@ -47,6 +47,8 @@ import {
 import { settingsService, City, State, ServiceTypeRecord } from "../../services/settings.service";
 import { walletService } from "../../services/wallet.service";
 import MediaPicker from "../../components/media/MediaPicker";
+import { mediaHint, uploadProblem } from "../../utils/mediaLimits";
+import { apiErrorMessage } from "../../utils/apiError";
 
 // ── States helper ─────────────────────────────────────────────────────────────
 function useStates() {
@@ -494,7 +496,7 @@ function RegisterPartnerDialog({ open, onClose, onDone }: RegisterDialogProps) {
                   </Button>
                 )}
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                  PNG, JPG up to 2MB. Shown on partner profile and invoices.
+                  {mediaHint("logo")} · Shown on partner profile and invoices.
                 </Typography>
               </Box>
             </Box>
@@ -922,7 +924,7 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
       setEditLogoUrl(null);
       onSaved();
     } catch (e: any) {
-      enqueueSnackbar(e?.response?.data?.detail ?? "Logo upload failed", { variant: "error" });
+      enqueueSnackbar(apiErrorMessage(e, "Logo upload failed"), { variant: "error" });
     } finally { setEditLogoUploading(false); }
   };
 
@@ -1330,7 +1332,7 @@ function EditPartnerDialog({ open, partner, cities, onClose, onSaved }: EditDial
                   {editLogoUrl ? "New Logo Selected" : partner?.logo_url ? "Current Logo" : "No Logo Uploaded"}
                 </Typography>
                 <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1.5 }}>
-                  PNG, JPG, max 2MB. Displayed on partner profile, invoices, and partner app.
+                  {mediaHint("logo")} · Displayed on partner profile, invoices, and partner app.
                 </Typography>
                 <Stack direction="row" gap={1}>
                   <Button variant="outlined" size="small" startIcon={<CloudUpload />} sx={{ borderRadius: 2 }}
@@ -1915,7 +1917,7 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
       setDocFile(null); setDocNumber(""); setDocExpiry("");
       refetch();
     } catch (e: any) {
-      enqueueSnackbar(e?.response?.data?.detail ?? "Upload failed", { variant: "error" });
+      enqueueSnackbar(apiErrorMessage(e, "Upload failed"), { variant: "error" });
     } finally { setDocUploading(false); }
   };
 
@@ -1942,7 +1944,7 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
       await partnerService.editPartner(partner.id, { logo_url: url });
       enqueueSnackbar("Logo uploaded", { variant: "success" }); refetch();
     } catch (e: any) {
-      enqueueSnackbar(e?.response?.data?.detail ?? "Logo upload failed", { variant: "error" });
+      enqueueSnackbar(apiErrorMessage(e, "Logo upload failed"), { variant: "error" });
     } finally { setLogoUploading(false); }
   };
 
@@ -2462,8 +2464,22 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
                     <Button variant="outlined" component="label" size="small" startIcon={<CloudUpload />} fullWidth sx={{ height: 40 }}>
                       {docFile ? docFile.name.slice(0, 18) + (docFile.name.length > 18 ? "…" : "") : "Select File"}
                       <input hidden type="file" accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] ?? null;
+                          if (!f) { setDocFile(null); return; }
+                          const problem = uploadProblem(f, "document");
+                          if (problem) {
+                            enqueueSnackbar(problem, { variant: "error" });
+                            e.target.value = "";
+                            setDocFile(null);
+                            return;
+                          }
+                          setDocFile(f);
+                        }} />
                     </Button>
+                    <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.5, fontSize: 10 }}>
+                      {mediaHint("document")}
+                    </Typography>
                   </Grid>
                   <Grid item xs={12} sm={2}>
                     <Button variant="contained" fullWidth size="small" onClick={handleDocUpload}

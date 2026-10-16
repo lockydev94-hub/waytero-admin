@@ -5,6 +5,7 @@
 //             /partners/*       (partner-scoped CRUD)
 // ============================================================
 import apiClient from "./api";
+import { uploadProblem } from "../utils/mediaLimits";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -257,6 +258,10 @@ export const partnerService = {
     document_number?: string,
     expiry_date?: string,
   ): Promise<{ message: string }> => {
+    // Same backstop as uploadMedia: the hint the admin sees and what is
+    // actually posted come from one table.
+    const problem = uploadProblem(file, "document");
+    if (problem) throw new Error(problem);
     const fd = new FormData();
     fd.append("file", file);
     fd.append("document_type", document_type);
@@ -323,6 +328,8 @@ export const partnerService = {
 
   /** Upload file to Cloudinary via admin settings upload-media, returns secure_url */
   uploadFile: async (file: File): Promise<string> => {
+    const problem = uploadProblem(file, "image");
+    if (problem) throw new Error(problem);
     const fd = new FormData();
     fd.append("file", file);
     fd.append("asset_type", "general");

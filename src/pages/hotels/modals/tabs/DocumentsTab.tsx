@@ -17,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import { hotelService, HotelDetail, HotelDocument, HOTEL_UPLOAD_FOLDERS } from "../../../../services/hotel.service";
 import { uploadMedia } from "../../../../services/settings.service";
+import { apiErrorMessage } from "../../../../utils/apiError";
 import { HOTEL_QUERY_KEYS } from "../../constants";
 import { isAdminOrOfficer } from "../../../../utils/currentUser";
 
@@ -100,8 +101,9 @@ function DocRow({
       });
       enqueueSnackbar("Document uploaded", { variant: "success" });
       invalidate();
-    } catch { enqueueSnackbar("Upload failed", { variant: "error" }); }
-    finally { setUploading(false); }
+    } catch (e: any) {
+      enqueueSnackbar(apiErrorMessage(e, "Upload failed"), { variant: "error" });
+    } finally { setUploading(false); }
   };
 
   const handleVerify = async () => {

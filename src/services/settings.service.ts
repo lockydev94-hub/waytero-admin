@@ -4,6 +4,7 @@
 //   DB Schema Part 1 §12-14 | Part 2 §14-15 | Part 3 §18 | Part 8 §11
 // ============================================================
 import apiClient from "./api";
+import { limitKindForAssetType, uploadProblem } from "../utils/mediaLimits";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -479,6 +480,10 @@ export const uploadMedia = async (
     onProgress?: (pct: number) => void;
   }
 ): Promise<MediaUploadResult> => {
+  // Backstop for every surface: hints come from the same table, so what an
+  // admin is told and what actually gets posted can never drift apart.
+  const problem = uploadProblem(file, limitKindForAssetType(assetType));
+  if (problem) throw new Error(problem);
   const fd = new FormData();
   fd.append("file", file);
   fd.append("asset_type", assetType);

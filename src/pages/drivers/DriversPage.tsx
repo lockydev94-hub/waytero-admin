@@ -37,6 +37,8 @@ import { useSnackbar } from "notistack";
 import apiClient from "../../services/api";
 import { partnerService, AdminPartnerListItem } from "../../services/partner.service";
 import MediaPicker from "../../components/media/MediaPicker";
+import { mediaHint } from "../../utils/mediaLimits";
+import { apiErrorMessage } from "../../utils/apiError";
 import { MediaLibraryItem } from "../../services/media.service";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -544,7 +546,7 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
       setDocType(""); setExpiry(""); setPickedUrl(""); setRefNumber("");
       onClose();
     } catch (err: any) {
-      enqueueSnackbar(err?.response?.data?.detail ?? "Upload failed", { variant: "error" });
+      enqueueSnackbar(apiErrorMessage(err, "Upload failed"), { variant: "error" });
     } finally {
       setSaving(false);
     }
@@ -690,7 +692,7 @@ function DocUploadDialog({ open, onClose, driver }: DocUploadDialogProps) {
                   Click to browse or pick from media library
                 </Typography>
                 <Typography variant="caption" sx={{ color: "rgba(255,255,255,0.25)" }}>
-                  PDF, JPG, PNG · uploaded to Cloudinary
+                  {mediaHint(docType === "PHOTO" ? "photo" : "document")} · uploaded to Cloudinary
                 </Typography>
               </Stack>
             )}

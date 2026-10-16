@@ -54,6 +54,8 @@ import {
   PartnerWithCab,
   PartnerWithCabPage,
 } from "../../services/vehicle.service";
+import { limitKindForAssetType, mediaHint, uploadProblem } from "../../utils/mediaLimits";
+import { apiErrorMessage } from "../../utils/apiError";
 import { settingsService, City, VehicleCategory, uploadMedia } from "../../services/settings.service";
 import apiClient from "../../services/api";
 import { partnerService } from "../../services/partner.service";
@@ -1133,7 +1135,7 @@ interface CloudinaryFileUploadProps {
   accept: string;                      // e.g. "image/*" or ".pdf,image/*"
   assetType: "document" | "photo";
   label: string;                       // e.g. "Upload RC Document"
-  hint?: string;                       // e.g. "PDF or image, max 20 MB"
+  hint?: string;                       // slot-specific advice only; the size limit is appended by mediaHint
   currentUrl?: string | null;
   onUploaded: (url: string) => void;
 }
@@ -1154,6 +1156,8 @@ function CloudinaryFileUpload({
 
   const handleFile = async (file: File) => {
     if (!file) return;
+    const problem = uploadProblem(file, limitKindForAssetType(assetType));
+    if (problem) { enqueueSnackbar(problem, { variant: "error" }); return; }
     setUploading(true);
     setProgress(0);
     try {
@@ -1164,8 +1168,10 @@ function CloudinaryFileUpload({
       onUploaded(result.secure_url);
       enqueueSnackbar(`${label} uploaded successfully`, { variant: "success" });
     } catch (err: any) {
+      // Oversize/format rejections arrive as HTTPException (no response body
+      // for a client-side guard) or as the WayTeroException envelope.
       enqueueSnackbar(
-        err?.response?.data?.detail ?? `Upload failed — check Cloudinary settings`,
+        apiErrorMessage(err, `Upload failed — check Cloudinary settings`),
         { variant: "error" }
       );
     } finally {
@@ -1303,11 +1309,9 @@ function CloudinaryFileUpload({
             <Typography variant="caption" fontWeight={700} color="text.secondary">
               {label}
             </Typography>
-            {hint && (
-              <Typography variant="caption" color="text.disabled" sx={{ fontSize: 10 }}>
-                {hint}
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.disabled" sx={{ fontSize: 10 }}>
+              {hint ? `${hint} · ${mediaHint(limitKindForAssetType(assetType))}` : mediaHint(limitKindForAssetType(assetType))}
+            </Typography>
             <Typography variant="caption" color="primary" sx={{ fontSize: 10, fontWeight: 600 }}>
               Click to browse or drag & drop
             </Typography>
@@ -1701,7 +1705,6 @@ function VehicleDetailDialog({ vehicleId, onClose }: VehicleDetailDialogProps) {
                             accept=".pdf,image/jpeg,image/png,image/webp"
                             assetType="document"
                             label={`Upload ${docUploadForm.document_type.replace(/_/g, " ")}`}
-                            hint="PDF or image (JPG, PNG) · max 20 MB"
                             currentUrl={docUploadedUrl || null}
                             onUploaded={(url) => {
                               setDocUploadedUrl(url);
@@ -1912,10 +1915,10 @@ function VehicleDetailDialog({ vehicleId, onClose }: VehicleDetailDialogProps) {
                           </Box>
                         ) : (
                           <CloudinaryFileUpload
-                            accept="image/jpeg,image/png,image/webp,image/heic"
+                            accept="image/jpeg,image/png,image/webp"
                             assetType="photo"
                             label={`Upload ${PHOTO_TYPE_META[photoUploadForm.photo_type]?.label ?? photoUploadForm.photo_type}`}
-                            hint="JPG, PNG, WebP · max 20 MB · Best: high resolution"
+                            hint="Best: high resolution"
                             currentUrl={photoUploadedUrl || null}
                             onUploaded={(url) => {
                               setPhotoUploadedUrl(url);

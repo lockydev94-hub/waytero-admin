@@ -31,6 +31,7 @@ import MediaPicker from "../../components/media/MediaPicker";
 import { hotelService } from "../../services/hotel.service";
 import { SLUG_REGEX, slugify } from "../../utils/seoValidation";
 import { apiErrorMessage } from "../../utils/apiError";
+import { limitKindForAssetType, mediaHint } from "../../utils/mediaLimits";
 import EmailSettingsTab from "./EmailSettingsTab";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
@@ -463,7 +464,7 @@ function MediaUploadCard({
               variant="outlined"
               sx={{ fontFamily: "monospace", fontSize: 11 }}
             />
-            <Chip label="PNG / JPG / SVG / WebP" size="small" variant="outlined" sx={{ fontSize: 11 }} />
+            <Chip label={mediaHint(limitKindForAssetType(assetType))} size="small" variant="outlined" sx={{ fontSize: 11 }} />
           </Stack>
 
           {currentUrl && (
@@ -4282,8 +4283,8 @@ function VehicleCategoryDialog({
       if (cropMode === "image") setImageUrl(result.secure_url);
       else setIconUrl(result.secure_url);
       enqueueSnackbar(`Category ${cropMode} uploaded`, { variant: "success" });
-    } catch {
-      enqueueSnackbar("Upload failed", { variant: "error" });
+    } catch (err) {
+      enqueueSnackbar(apiErrorMessage(err, "Upload failed"), { variant: "error" });
     } finally {
       setUploading(null);
       setCropFile(null);
@@ -4945,10 +4946,11 @@ function ServiceTypeDialog({
       if (cropMode === "image") setImageUrl(result.secure_url);
       else setIconUrl(result.secure_url);
       enqueueSnackbar(`Service type ${cropMode} uploaded`, { variant: "success" });
-    } catch {
-      enqueueSnackbar("Upload failed", { variant: "error" });
+    } catch (err) {
+      enqueueSnackbar(apiErrorMessage(err, "Upload failed"), { variant: "error" });
     } finally {
-      setUploading(null); setCropFile(null);
+      setUploading(null);
+      setCropFile(null);
     }
   };
 

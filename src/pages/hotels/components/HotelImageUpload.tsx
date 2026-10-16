@@ -14,6 +14,7 @@ import { CloudUpload } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 import { uploadMedia } from "../../../services/settings.service";
 import { apiErrorMessage } from "../../../utils/apiError";
+import { limitKindForAssetType, mediaHint } from "../../../utils/mediaLimits";
 import MediaPicker from "../../../components/media/MediaPicker";
 
 interface Props {
@@ -34,7 +35,7 @@ export default function HotelImageUpload({
   assetType = "photo",
   accept = "image/png,image/jpeg,image/webp",
   label = "Upload images",
-  hint = "PNG, JPG or WEBP — drag and drop, or click to browse",
+  hint,
   multiple = true,
   disabled = false,
   onUploaded,
@@ -140,7 +141,7 @@ export default function HotelImageUpload({
             {busy ? `Uploading ${done + 1} of ${total}…` : label}
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            {hint}
+            {hint ?? mediaHint(limitKindForAssetType(assetType))}
           </Typography>
         </Stack>
 

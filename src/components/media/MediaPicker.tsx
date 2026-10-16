@@ -37,6 +37,8 @@ import { useSnackbar } from "notistack";
 import { mediaService, MediaLibraryItem } from "../../services/media.service";
 import { uploadMedia, MediaUploadResult } from "../../services/settings.service";
 import { apiErrorMessage } from "../../utils/apiError";
+import { MEDIA_LIMITS, limitKindForAssetType, mediaHint, uploadProblem } from "../../utils/mediaLimits";
+import type { MediaLimitKind } from "../../utils/mediaLimits";
 import AdvancedImageCropper, {
   AspectPreset, DEFAULT_ASPECT_PRESETS, DEFAULT_OUTPUT_SIZES,
 } from "./ImageCropper";
@@ -44,7 +46,7 @@ import AdvancedImageCropper, {
 // ── Public types ──────────────────────────────────────────────
 
 export type MediaPickerKind =
-  | "image" | "logo" | "icon" | "payment_icon" | "video";
+  | "image" | "logo" | "icon" | "payment_icon" | "video" | "document";
 
 export type PickerAssetType =
   | "logo" | "favicon" | "og_image" | "general" | "document" | "photo";
@@ -84,6 +86,8 @@ export interface MediaPickerProps {
   crop?: MediaPickerCropSpec;
   /** Accepted mime types for the Upload tab. */
   accept?: string;
+  /** Tighter size cap than the kind default, for endpoints that enforce one. */
+  maxBytes?: number;
   title?: string;
 }
 
@@ -93,14 +97,7 @@ const ASSET_TYPE_FOR: Record<MediaPickerKind, PickerAssetType> = {
   logo: "logo",
   icon: "general",
   payment_icon: "general",
-};
-
-const ACCEPT_FOR: Record<MediaPickerKind, string> = {
-  image: "image/png,image/jpeg,image/webp,image/svg+xml",
-  video: "video/mp4,video/webm,video/quicktime",
-  logo: "image/png,image/jpeg,image/webp,image/svg+xml",
-  icon: "image/png,image/jpeg,image/webp,image/svg+xml",
-  payment_icon: "image/png,image/jpeg,image/webp,image/svg+xml",
+  document: "document",
 };
 
 /** Folders commonly used across the portal — gallery filter chips. */
@@ -143,13 +140,23 @@ export default function MediaPicker({
   allowDelete = false,
   crop,
   accept,
+  maxBytes,
   title = "Choose media",
 }: MediaPickerProps) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
 
   const activeAssetType = assetType ?? ASSET_TYPE_FOR[kind];
-  const activeAccept = accept ?? ACCEPT_FOR[kind];
+  // Pick the budget that matches what the endpoint receives: `assetType`
+  // decides the class (document/photo/logo/favicon), `kind` refines plain
+  // images into icons, logos and videos, which have their own caps.
+  const assetKind = limitKindForAssetType(activeAssetType);
+  const limitKind: MediaLimitKind = assetKind === "image" ? kind : assetKind;
+  const limits = MEDIA_LIMITS[limitKind];
+  // Some endpoints cap tighter than the kind default; caption and guard share
+  // the effective cap so they can never disagree.
+  const cap = maxBytes ?? limits.maxBytes;
+  const activeAccept = accept ?? limits.mimes.join(",");
 
   const [tab, setTab] = useState(0);
 
@@ -279,6 +286,14 @@ export default function MediaPicker({
   const onFilesPicked = (files: FileList | null) => {
     const f = files?.[0];
     if (!f) return;
+    // Reject before the crop step — an admin should not spend a minute
+    // framing a file that cannot be uploaded anyway.
+    const problem = uploadProblem(f, limitKind, cap);
+    if (problem) {
+      enqueueSnackbar(problem, { variant: "error" });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
     // Raster + crop spec → open the cropper first.
     if (crop && isRaster(f)) {
       const url = URL.createObjectURL(f);
@@ -533,7 +548,7 @@ export default function MediaPicker({
                     <CloudUpload sx={{ fontSize: 52, color: dragOver ? "primary.main" : "text.disabled", mb: 1 }} />
                     <Typography fontWeight={700}>Click to browse or drag & drop</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {activeAccept.split(",").map((m) => m.split("/").pop()).join(" / ").toUpperCase()} · max 20 MB
+                      {mediaHint(limitKind, cap)}
                     </Typography>
                   </Box>
 
