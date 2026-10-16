@@ -22,7 +22,7 @@ import {
   Hotel, Tour, AccountBalance, BarChart, ManageAccounts, Settings,
   History, LocalOffer, HeadsetMic, DirectionsRun, AccountBalanceWallet,
   Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
-  Receipt, PersonOff, MarkEmailRead, Campaign,
+  Receipt, PersonOff, MarkEmailRead, Campaign, AltRoute,
 } from "@mui/icons-material";
 import { NAV_SECTIONS, NAV_ITEMS } from "../../constants";
 import { useAuthStore } from "../../stores/authStore";
@@ -38,7 +38,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Build: <Build />, SwapHoriz: <SwapHoriz />, Cancel: <Cancel />, Gavel: <Gavel />,
   Web: <Web />, Article: <Article />, Email: <Email />, Forum: <Forum />,
   Receipt: <Receipt />, PersonOff: <PersonOff />, MarkEmailRead: <MarkEmailRead />,
-  Campaign: <Campaign />,
+  Campaign: <Campaign />, AltRoute: <AltRoute />,
 };
 
 interface SearchOption {

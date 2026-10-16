@@ -50,6 +50,7 @@ const BlogEditorPage            = lazy(() => import("../pages/blog/BlogEditorPag
 const LandingPagesListPage      = lazy(() => import("../pages/landing-pages/LandingPagesListPage"));
 const LandingPageEditorPage     = lazy(() => import("../pages/landing-pages/LandingPageEditorPage"));
 const OffersPage                = lazy(() => import("../pages/offers/OffersPage"));
+const RoutesPage                = lazy(() => import("../pages/cab-routes/RoutesPage"));
 const PartnerApplicationsPage   = lazy(() => import("../pages/leads/PartnerApplicationsPage"));
 const ContactMessagesPage       = lazy(() => import("../pages/leads/ContactMessagesPage"));
 const ChatPage                  = lazy(() => import("../pages/chat/ChatPage"));
@@ -132,6 +133,9 @@ export function AppRoutes() {
 
             {/* Offers — coupon-backed hero slider + public offer pages */}
             <Route path="/offers"                       element={<OffersPage />} />
+
+            {/* Cab routes — admin-managed intercity corridors for Popular Routes */}
+            <Route path="/cab-routes"                   element={<RoutesPage />} />
 
             {/* Website leads — partner applications + contact messages */}
             <Route path="/leads/partner-applications"  element={<PartnerApplicationsPage />} />

@@ -59,8 +59,10 @@ const SECTION_HINT: Record<string, string> = {
   STATS:         "Big-number platform stats (rides, cities, partners).",
   PARTNERS:      "Showcase of partner brands / fleet operators.",
   CTA:           "Closing call-to-action banner.",
-  OFFERS:        "Limited-time deals / promotional banners.",
+  OFFERS:        "Coupon cards under the hero. The cards themselves come from the Offers page — only the header copy lives here.",
   POPULAR_DESTINATIONS: "Trending destinations grid.",
+  POPULAR_ROUTES: "Inter-city cab route pills. Route data lives on the Cab Routes page — only the header copy lives here.",
+  POPULAR_CITIES: "City pills from the database, each linking to its published landing page.",
   HOW_IT_WORKS:  "Step-by-step guide to booking with WayTero.",
   FEATURED_HOTELS: "Handpicked partner hotels.",
   FAQ:           "Accordion of frequently asked questions.",
@@ -80,6 +82,8 @@ const SECTION_DEFAULT_TAG: Record<string, string> = {
   CTA:           "DEFAULT",
   OFFERS:        "DEFAULT",
   POPULAR_DESTINATIONS: "DEFAULT",
+  POPULAR_ROUTES: "DEFAULT",
+  POPULAR_CITIES: "DEFAULT",
   HOW_IT_WORKS:  "DEFAULT",
   FEATURED_HOTELS: "DEFAULT",
   FAQ:           "DEFAULT",
@@ -95,8 +99,10 @@ const SECTION_DEFAULT_TAG: Record<string, string> = {
 const CONTENT_SCHEMA_HINT: Record<string, string> = {
   HOW_IT_WORKS:
     '{"steps": [{"title": "…", "description": "…", "icon": "Search | CalendarCheck | ShieldCheck | Plane | Car | Wallet | …"}]}',
+  HERO:
+    '{"marquee_items": [{"icon": "Layers | ReceiptText | ShieldCheck | Store | …", "label": "…", "sublabel": "…"}]} — the scrolling strip under the hero. Empty or absent means no strip.',
   OFFERS:
-    '{"offers": [{"title": "…", "description": "…", "badge": "…", "cta_text": "…", "cta_link": "/cabs"}]}',
+    'Legacy. The homepage coupon cards now read the Offers page (coupon-backed, with the code that auto-applies at booking); "content.offers" is no longer rendered.',
   FAQ:
     '{"faqs": [{"question": "…", "answer": "…"}]}',
   STATS:
@@ -122,7 +128,7 @@ const CONTENT_PICKERS: Record<string, ContentPickerConfig> = {
     type: "COUPONS",
     key: "offers",
     label: "Coupons",
-    help: "Pulls currently-valid active coupons from the database.",
+    help: "Legacy — fills content.offers, which the homepage no longer renders. Manage live cards on the Offers page.",
   },
   POPULAR_DESTINATIONS: {
     type: "DESTINATIONS",

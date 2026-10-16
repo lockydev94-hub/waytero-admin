@@ -77,6 +77,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "hotels", label: "Hotels", icon: "Hotel", path: "/hotels", roles: ["SUPER_ADMIN","ADMIN","VERIFICATION_OFFICER"], keywords: "hotel stay room property" },
       { key: "hotels-commission-audit", label: "Hotel Commission Audit", icon: "Receipt", path: "/hotels/commission-audit", roles: ["SUPER_ADMIN","ADMIN"], keywords: "commission hotel audit gst" },
       { key: "tours", label: "Tours", icon: "Tour", path: "/tours", roles: ["SUPER_ADMIN","ADMIN"], keywords: "tour package travel excursion" },
+      { key: "cab-routes", label: "Cab Routes", icon: "AltRoute", path: "/cab-routes", roles: ["SUPER_ADMIN","ADMIN"], keywords: "route intercity outstation distance bhubaneswar odisha popular routes fare" },
     ],
   },
   {
