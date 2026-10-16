@@ -71,71 +71,60 @@ const SECTION_HINT: Record<string, string> = {
   BLOG:          "Latest travel-stories / blog band.",
 };
 
+// ── Eyebrow prefill for a new variant ──────────────────────────
+// `variant_tag` is not an internal code — it is the small line the
+// renderer prints ABOVE the heading, so this map has to hold real site
+// copy. Values are the eyebrows migration 0055 / 0080 seeded, so a new
+// variant starts looking like the band it replaces. "" means the
+// renderer falls back to its own default; a blank trims to null on save.
 const SECTION_DEFAULT_TAG: Record<string, string> = {
-  HERO:          "DEFAULT",
-  SERVICES:      "DEFAULT",
-  WHY_US:        "DEFAULT",
-  TOUR_PACKAGES: "DEFAULT",
-  TESTIMONIALS:  "DEFAULT",
-  STATS:         "DEFAULT",
-  PARTNERS:      "DEFAULT",
-  CTA:           "DEFAULT",
-  OFFERS:        "DEFAULT",
-  POPULAR_DESTINATIONS: "DEFAULT",
-  POPULAR_ROUTES: "DEFAULT",
-  POPULAR_CITIES: "DEFAULT",
-  HOW_IT_WORKS:  "DEFAULT",
-  FEATURED_HOTELS: "DEFAULT",
-  FAQ:           "DEFAULT",
-  NEWSLETTER:    "DEFAULT",
-  APP_DOWNLOAD:  "DEFAULT",
-  BLOG:          "DEFAULT",
+  HERO:          "India's Travel Operating System",
+  SERVICES:      "What we offer",
+  WHY_US:        "Why choose us",
+  TOUR_PACKAGES: "Curated experiences",
+  TESTIMONIALS:  "Loved by travelers",
+  STATS:         "Trusted across India",
+  PARTNERS:      "Trusted partners",
+  CTA:           "",
+  OFFERS:        "Limited-time deals",
+  POPULAR_DESTINATIONS: "Where to next",
+  POPULAR_ROUTES: "Where people travel",
+  POPULAR_CITIES: "Where we operate",
+  HOW_IT_WORKS:  "Simple & transparent",
+  FEATURED_HOTELS: "Where to stay",
+  FAQ:           "Help centre",
+  NEWSLETTER:    "Stay in the loop",
+  APP_DOWNLOAD:  "On the go",
+  BLOG:          "Travel stories",
 };
 
 // ── Content schema hints ───────────────────────────────────────
 // These sections read a JSONB `content` column; the editor below
 // exposes a monospace JSON field so admins can author the structured
 // payload. The hint shows the exact shape the renderer expects.
+//
+// Bands whose cards come from a live table (FEATURED_HOTELS,
+// POPULAR_DESTINATIONS, TOUR_PACKAGES, OFFERS, BLOG) are absent on
+// purpose: they read no content array, so the backend now rejects those
+// keys and the only content they accept is copy. Author their cards on
+// the page that owns them.
 const CONTENT_SCHEMA_HINT: Record<string, string> = {
   HOW_IT_WORKS:
     '{"steps": [{"title": "…", "description": "…", "icon": "Search | CalendarCheck | ShieldCheck | Plane | Car | Wallet | …"}]}',
   HERO:
     '{"marquee_items": [{"icon": "Layers | ReceiptText | ShieldCheck | Store | …", "label": "…", "sublabel": "…"}]} — the scrolling strip under the hero. Empty or absent means no strip.',
-  OFFERS:
-    'Legacy. The homepage coupon cards now read the Offers page (coupon-backed, with the code that auto-applies at booking); "content.offers" is no longer rendered.',
   FAQ:
     '{"faqs": [{"question": "…", "answer": "…"}]}',
   STATS:
     '{"stats": [{"value": 50000, "suffix": "+", "label": "Happy Travelers"}]}',
-  POPULAR_DESTINATIONS:
-    '{"destinations": [{"name": "Goa", "state": "Goa", "starting_price": 4999, "trending": true, "image_url": null}]}',
-  FEATURED_HOTELS:
-    '{"hotels": [{"name": "…", "city": "…", "rating": 4.9, "reviews": 1200, "price": 9500, "old_price": null, "amenities": ["Wifi","Pool"], "tag": null, "image_url": null}]}',
 };
 
 // ── Content data pickers ───────────────────────────────────────
-// Sections backed by live DB records get a "browse database" button in
-// the modal. `type` hits GET /cms/picker-items?type=… and `key` is the
-// content JSON array the selected records are appended to.
+// Sections that store a copy array built from live records get a
+// "browse database" button in the modal. `type` hits
+// GET /cms/picker-items?type=… and `key` is the content JSON array the
+// selected records are appended to. Only SERVICES has such a key today.
 const CONTENT_PICKERS: Record<string, ContentPickerConfig> = {
-  FEATURED_HOTELS: {
-    type: "HOTELS",
-    key: "hotels",
-    label: "Hotels",
-    help: "Pulls ACTIVE/APPROVED hotels from the database.",
-  },
-  OFFERS: {
-    type: "COUPONS",
-    key: "offers",
-    label: "Coupons",
-    help: "Legacy — fills content.offers, which the homepage no longer renders. Manage live cards on the Offers page.",
-  },
-  POPULAR_DESTINATIONS: {
-    type: "DESTINATIONS",
-    key: "destinations",
-    label: "Cities",
-    help: "Pulls active cities (with state names) from the database.",
-  },
   SERVICES: {
     type: "SERVICES",
     key: "items",
@@ -498,10 +487,10 @@ export default function SectionEditorPage() {
             </Grid>
             <Grid item xs={12} md={4}>
               <TextField
-                fullWidth size="small" label="Tag"
+                fullWidth size="small" label="Eyebrow (small line above the heading)"
                 value={form.variant_tag ?? ""}
                 onChange={(e) => setForm({ ...form, variant_tag: e.target.value })}
-                helperText="e.g. FESTIVAL_DIWALI, OUTSTATION"
+                helperText="Printed on the site, in caps above the section heading — leave blank to use this band's default"
               />
             </Grid>
 
@@ -547,7 +536,7 @@ export default function SectionEditorPage() {
 
             <Grid item xs={12} md={8}>
               <TextField
-                fullWidth size="small" label="Headline"
+                fullWidth size="small" label="Section heading (H2 shown on site)"
                 value={form.headline ?? ""}
                 onChange={(e) => setForm({ ...form, headline: e.target.value })}
               />
@@ -562,7 +551,7 @@ export default function SectionEditorPage() {
             </Grid>
             <Grid item xs={12}>
               <TextField
-                fullWidth size="small" label="Subheadline"
+                fullWidth size="small" label="Sub-heading (line under the section heading)"
                 value={form.subheadline ?? ""}
                 onChange={(e) => setForm({ ...form, subheadline: e.target.value })}
               />
@@ -592,10 +581,12 @@ export default function SectionEditorPage() {
             </Grid>
 
             {/* ── Structured content (JSON) ────────────────────────
-                Sections with a content schema (HOW_IT_WORKS, OFFERS, FAQ,
-                STATS, POPULAR_DESTINATIONS, FEATURED_HOTELS) store their
-                items here. Admin authors the JSON directly; the public
-                homepage spreads it into the variant payload. */}
+                Sections with a content schema (HERO marquee, SERVICES
+                items, HOW_IT_WORKS steps, FAQ faqs, STATS stats) store
+                their payload here. Admin authors the JSON directly; the
+                public homepage spreads it into the variant payload, so
+                the backend rejects keys this band's renderer never reads
+                and keys that would overwrite a field above. */}
             <Grid item xs={12}>
               <Divider>
                 <Typography variant="caption" color="text.secondary">
