@@ -23,6 +23,7 @@ import {
   History, LocalOffer, HeadsetMic, DirectionsRun, AccountBalanceWallet,
   Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
   Receipt, PersonOff, MarkEmailRead, Campaign, AltRoute,
+  ContactSupport, PhoneCallback, RateReview,
 } from "@mui/icons-material";
 import { NAV_SECTIONS, NAV_ITEMS } from "../../constants";
 import { useAuthStore } from "../../stores/authStore";
@@ -39,6 +40,8 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Web: <Web />, Article: <Article />, Email: <Email />, Forum: <Forum />,
   Receipt: <Receipt />, PersonOff: <PersonOff />, MarkEmailRead: <MarkEmailRead />,
   Campaign: <Campaign />, AltRoute: <AltRoute />,
+  ContactSupport: <ContactSupport />, PhoneCallback: <PhoneCallback />,
+  RateReview: <RateReview />,
 };
 
 interface SearchOption {

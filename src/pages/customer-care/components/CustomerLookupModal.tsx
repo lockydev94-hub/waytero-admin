@@ -4,7 +4,7 @@
 // Step 2a: Existing customer → show profile + actions
 // Step 2b: New customer → register form
 // ============================================================
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Box, Stack, Typography, TextField, Button, Divider,
@@ -28,6 +28,9 @@ export type BookingService = "CAB" | "HOTEL" | "TOUR";
 interface Props {
   open: boolean;
   onClose: () => void;
+  /** Set when another screen deep-linked here with a number already in hand
+   *  (the enquiry and callback queues do this) — the lookup runs on open. */
+  initialMobile?: string;
   onCustomerSelected: (
     customer: CustomerLookup,
     action: "booking" | "issue",
@@ -58,14 +61,25 @@ const SERVICES: {
   { key: "TOUR", label: "Tour Package", desc: "Curated itineraries with partner pricing", color: "#059669", icon: <TravelExplore />, enabled: true },
 ];
 
-export default function CustomerLookupModal({ open, onClose, onCustomerSelected }: Props) {
+export default function CustomerLookupModal({ open, onClose, initialMobile, onCustomerSelected }: Props) {
   const theme = useTheme();
   const [mobile, setMobile] = useState("");
   const [step, setStep] = useState<Step>("lookup");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [customer, setCustomer] = useState<CustomerLookup | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RegisterForm>();
+
+  useEffect(() => {
+    if (!open) { setPrefilled(false); return; }
+    if (initialMobile && !prefilled) {
+      setPrefilled(true);
+      setMobile(initialMobile);
+      void handleLookup(initialMobile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialMobile, prefilled]);
 
   function handleClose() {
     setMobile("");
@@ -76,11 +90,12 @@ export default function CustomerLookupModal({ open, onClose, onCustomerSelected 
     onClose();
   }
 
-  async function handleLookup() {
-    if (!mobile || mobile.length < 10) { setError("Enter a valid 10-digit mobile number"); return; }
+  async function handleLookup(override?: string) {
+    const value = (override ?? mobile).trim();
+    if (!value || value.length < 10) { setError("Enter a valid 10-digit mobile number"); return; }
     setLoading(true); setError("");
     try {
-      const result = await customerCareService.lookup(mobile);
+      const result = await customerCareService.lookup(value);
       setCustomer(result);
       setStep(result.found ? "found" : "register");
     } catch (e: any) {
@@ -168,7 +183,7 @@ export default function CustomerLookupModal({ open, onClose, onCustomerSelected 
                 sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2.5 } }}
               />
               <Button
-                variant="contained" onClick={handleLookup}
+                variant="contained" onClick={() => handleLookup()}
                 disabled={loading || mobile.length < 10}
                 startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Search />}
                 sx={{ borderRadius: 2.5, minWidth: 120, fontWeight: 700, textTransform: "none" }}

@@ -18,7 +18,7 @@ import {
   History, Notifications, ChevronLeft, Logout, LightMode, DarkMode, LocalOffer, HeadsetMic, DirectionsRun,
   AccountBalanceWallet, Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
   Receipt, PersonOff, MarkEmailRead, Campaign,
-  Description, Public, AltRoute,
+  Description, Public, AltRoute, ContactSupport, PhoneCallback, RateReview,
 } from "@mui/icons-material";
 import { useAuthStore } from "../stores/authStore";
 import { useUiStore }   from "../stores/uiStore";
@@ -65,6 +65,9 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Description:     <Description />,
   Public:          <Public />,
   AltRoute:        <AltRoute />,
+  ContactSupport:  <ContactSupport />,
+  PhoneCallback:   <PhoneCallback />,
+  RateReview:      <RateReview />,
 };
 
 export function AdminLayout() {

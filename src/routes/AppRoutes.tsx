@@ -53,6 +53,9 @@ const OffersPage                = lazy(() => import("../pages/offers/OffersPage"
 const RoutesPage                = lazy(() => import("../pages/cab-routes/RoutesPage"));
 const PartnerApplicationsPage   = lazy(() => import("../pages/leads/PartnerApplicationsPage"));
 const ContactMessagesPage       = lazy(() => import("../pages/leads/ContactMessagesPage"));
+const EnquiriesPage             = lazy(() => import("../pages/leads/EnquiriesPage"));
+const CallbackRequestsPage      = lazy(() => import("../pages/leads/CallbackRequestsPage"));
+const FeedbackQueuePage         = lazy(() => import("../pages/leads/FeedbackQueuePage"));
 const ChatPage                  = lazy(() => import("../pages/chat/ChatPage"));
 const TaxGstPage                = lazy(() => import("../pages/tax/TaxGstPage"));
 const AccountDeletionPage       = lazy(() => import("../pages/accountDeletion/AccountDeletionRequestsPage"));
@@ -140,6 +143,11 @@ export function AppRoutes() {
             {/* Website leads — partner applications + contact messages */}
             <Route path="/leads/partner-applications"  element={<PartnerApplicationsPage />} />
             <Route path="/leads/contact-messages"      element={<ContactMessagesPage />} />
+
+            {/* Public capture surfaces — enquiry rail, callback card, /feedback */}
+            <Route path="/leads/enquiries"             element={<EnquiriesPage />} />
+            <Route path="/leads/callback-requests"     element={<CallbackRequestsPage />} />
+            <Route path="/leads/feedback"              element={<FeedbackQueuePage />} />
 
             {/* Live chat board */}
             <Route path="/chat"                        element={<ChatPage />} />

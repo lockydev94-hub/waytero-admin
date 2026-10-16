@@ -4,7 +4,7 @@
 // Route: /customer-care
 // ============================================================
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Box, Stack, Typography, Button, TextField, Select,
   MenuItem, FormControl, InputLabel, InputAdornment,
@@ -37,6 +37,7 @@ interface LogsState {
 export default function CustomerCarePage() {
   const theme    = useTheme();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   // ── Data state ──────────────────────────────────────────────
   const [stats,     setStats]     = useState<CareStats>();
@@ -53,6 +54,7 @@ export default function CustomerCarePage() {
 
   // ── Modal/Drawer state ──────────────────────────────────────
   const [lookupOpen,   setLookupOpen]   = useState(false);
+  const [lookupMobile, setLookupMobile] = useState<string | undefined>();
   const [issueOpen,    setIssueOpen]    = useState(false);
   const [detailOpen,   setDetailOpen]   = useState(false);
   const [drawerOpen,   setDrawerOpen]   = useState(false);
@@ -94,6 +96,17 @@ export default function CustomerCarePage() {
   useEffect(() => {
     loadStats();
   }, []);
+
+  // Deep link from the enquiry / callback queues: /customer-care?mobile=…
+  // opens the lookup with the number already searched, then drops the param
+  // so a refresh does not reopen the modal.
+  useEffect(() => {
+    const mobile = searchParams.get("mobile");
+    if (!mobile) return;
+    setLookupMobile(mobile);
+    setLookupOpen(true);
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     loadLogs(1, logs.page_size);
@@ -309,7 +322,8 @@ export default function CustomerCarePage() {
       {/* ── Modals ──────────────────────────────────────────── */}
       <CustomerLookupModal
         open={lookupOpen}
-        onClose={() => setLookupOpen(false)}
+        onClose={() => { setLookupOpen(false); setLookupMobile(undefined); }}
+        initialMobile={lookupMobile}
         onCustomerSelected={handleCustomerSelected}
       />
 

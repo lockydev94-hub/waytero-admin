@@ -111,6 +111,9 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "email-logs", label: "Email Logs", icon: "MarkEmailRead", path: "/email/logs", roles: ["SUPER_ADMIN","ADMIN"], keywords: "email log mail sent" },
       { key: "partner-applications", label: "Partner Applications", icon: "Handshake", path: "/leads/partner-applications", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "partner apply application lead" },
       { key: "contact-messages", label: "Contact Messages", icon: "Email", path: "/leads/contact-messages", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "contact message enquiry lead" },
+      { key: "enquiries", label: "Website Enquiries", icon: "ContactSupport", path: "/leads/enquiries", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "enquiry lead quote quotation callback rail website" },
+      { key: "callback-requests", label: "Callback Requests", icon: "PhoneCallback", path: "/leads/callback-requests", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "callback request call me mobile phone lead" },
+      { key: "guest-feedback", label: "Guest Feedback", icon: "RateReview", path: "/leads/feedback", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "feedback review rating guest booking moderation" },
     ],
   },
   {
