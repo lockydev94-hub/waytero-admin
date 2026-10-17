@@ -124,6 +124,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "offers", label: "Offers", icon: "LocalOffer", path: "/offers", roles: ["SUPER_ADMIN","ADMIN"], keywords: "offer hero slider coupon marketing promo landing" },
       { key: "blog", label: "Blog", icon: "Article", path: "/cms/blog", roles: ["SUPER_ADMIN","ADMIN"], keywords: "blog article post content" },
       { key: "landing-pages", label: "Landing Pages", icon: "Public", path: "/cms/landing-pages", roles: ["SUPER_ADMIN","ADMIN"], keywords: "landing page city state seo cab hotel tour bhubaneswar odisha marketing" },
+      { key: "website-pages", label: "Pages", icon: "Article", path: "/cms/pages", roles: ["SUPER_ADMIN","ADMIN"], keywords: "page privacy terms refund cookies safety support careers press policy copy prose legal content" },
     ],
   },
   {

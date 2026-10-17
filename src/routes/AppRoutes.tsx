@@ -49,6 +49,8 @@ const BlogListPage              = lazy(() => import("../pages/blog/BlogListPage"
 const BlogEditorPage            = lazy(() => import("../pages/blog/BlogEditorPage"));
 const LandingPagesListPage      = lazy(() => import("../pages/landing-pages/LandingPagesListPage"));
 const LandingPageEditorPage     = lazy(() => import("../pages/landing-pages/LandingPageEditorPage"));
+const WebsitePagesListPage      = lazy(() => import("../pages/website-pages/WebsitePagesListPage"));
+const WebsitePageEditorPage     = lazy(() => import("../pages/website-pages/WebsitePageEditorPage"));
 const OffersPage                = lazy(() => import("../pages/offers/OffersPage"));
 const RoutesPage                = lazy(() => import("../pages/cab-routes/RoutesPage"));
 const PartnerApplicationsPage   = lazy(() => import("../pages/leads/PartnerApplicationsPage"));
@@ -133,6 +135,11 @@ export function AppRoutes() {
             <Route path="/cms/landing-pages"            element={<LandingPagesListPage />} />
             <Route path="/cms/landing-pages/new"        element={<LandingPageEditorPage />} />
             <Route path="/cms/landing-pages/:id"        element={<LandingPageEditorPage />} />
+
+            {/* Website pages — the prose of the policy/trust/company pages,
+                stored as LEGAL_PAGE_* configurations and editable here. */}
+            <Route path="/cms/pages"                    element={<WebsitePagesListPage />} />
+            <Route path="/cms/pages/:slug"              element={<WebsitePageEditorPage />} />
 
             {/* Offers — coupon-backed hero slider + public offer pages */}
             <Route path="/offers"                       element={<OffersPage />} />

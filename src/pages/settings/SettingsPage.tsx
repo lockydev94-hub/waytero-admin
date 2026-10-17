@@ -724,7 +724,8 @@ function PlatformTab({ enqueueSnackbar }: any) {
   const GENERAL_KEYS = ["PLATFORM_NAME", "PLATFORM_TAGLINE", "PLATFORM_COUNTRY", "SUPPORT_EMAIL", "SUPPORT_PHONE",
     "PLATFORM_TIMEZONE", "PLATFORM_CURRENCY", "PLATFORM_CURRENCY_SYMBOL", "PLATFORM_LOCALE",
     "GST_PERCENTAGE", "PLATFORM_COMMISSION_PERCENTAGE", "BOOKING_CANCELLATION_HOURS",
-    "GST_ENABLED", "GST_RATE", "COMMISSION_GST_RATE"];
+    "GST_ENABLED", "GST_RATE", "COMMISSION_GST_RATE",
+    "PLATFORM_OFFICE_HOURS", "PLATFORM_WHATSAPP_PHONE"];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -830,11 +831,22 @@ function PlatformTab({ enqueueSnackbar }: any) {
   const GENERAL_GROUPS: { title: string; keys: string[]; desc?: string }[] = [
     { title: "Platform Identity", keys: ["PLATFORM_NAME", "PLATFORM_TAGLINE", "PLATFORM_COUNTRY", "SUPPORT_EMAIL", "SUPPORT_PHONE"] },
     { title: "Locale & Currency", keys: ["PLATFORM_TIMEZONE", "PLATFORM_CURRENCY", "PLATFORM_CURRENCY_SYMBOL", "PLATFORM_LOCALE"] },
+    { title: "Desk hours & WhatsApp", keys: ["PLATFORM_OFFICE_HOURS", "PLATFORM_WHATSAPP_PHONE"] },
     { title: "Operational Rules",  keys: ["GST_PERCENTAGE", "PLATFORM_COMMISSION_PERCENTAGE", "BOOKING_CANCELLATION_HOURS"] },
   ];
 
+  // These two keys are read by GET /public/platform-profile and printed on the
+  // website, so the caption has to state the contract — an empty WhatsApp number
+  // is not "no WhatsApp", it means the site links the support phone instead.
+  const KEY_HINTS: Record<string, string> = {
+    PLATFORM_OFFICE_HOURS: "Hours the desk is staffed — e.g. Mon–Sat, 10:00 AM – 7:00 PM IST",
+    PLATFORM_WHATSAPP_PHONE: "WhatsApp number with country code, digits only — blank means the site links the support phone",
+  };
+
   const configDesc: Record<string, string> = {};
-  configs.forEach(c => { configDesc[c.config_key] = c.description ?? c.config_key; });
+  // Only a description the row actually carries. Falling back to the key name
+  // here would be truthy for every row and outrank the hint below it.
+  configs.forEach(c => { if (c.description) configDesc[c.config_key] = c.description; });
 
   return (
     <Box>
@@ -1054,7 +1066,7 @@ function PlatformTab({ enqueueSnackbar }: any) {
                     {group.keys.map(key => (
                       <Box key={key}>
                         <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
-                          {configDesc[key] || key.replace(/_/g, " ")}
+                          {configDesc[key] || KEY_HINTS[key] || key.replace(/_/g, " ")}
                         </Typography>
                         <Stack direction="row" spacing={1} alignItems="center">
                           <TextField

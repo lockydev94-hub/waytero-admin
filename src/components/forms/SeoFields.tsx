@@ -29,11 +29,18 @@ interface Props {
   slugMax?: number;
   /** Hide the slug input when the page edits it elsewhere. */
   showSlug?: boolean;
+  /** Hide keywords for surfaces whose reader does not consume them. The
+   *  static-page SEO row (SEO_PAGE_*) is read as {title, description} only,
+   *  so showing a keywords box there would let an admin type something the
+   *  website silently ignores. */
+  showKeywords?: boolean;
+  /** Shown in place of the keywords block when `showKeywords` is false. */
+  keywordsHiddenNote?: string;
 }
 
 export default function SeoFields({
   value, onChange, urlBase, fallbackTitle = "", fallbackDescription = "", liveEntity, originalSlug,
-  slugMax = SEO_LIMITS.slug, showSlug = true,
+  slugMax = SEO_LIMITS.slug, showSlug = true, showKeywords = true, keywordsHiddenNote,
 }: Props) {
   const [slugTouched, setSlugTouched] = useState(Boolean(value.slug));
 
@@ -113,27 +120,35 @@ export default function SeoFields({
         onChange={(e) => onChange({ seo_description: e.target.value })}
       />
 
-      <Box>
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
-          Keywords (comma separated, up to {SEO_LIMITS.keywords} chars)
-        </Typography>
-        <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1 }}>
-          {splitKeywords(value.seo_keywords).map((kw) => (
-            <Chip
-              key={kw}
-              label={kw}
-              size="small"
-              onDelete={() =>
-                onChange({ seo_keywords: splitKeywords(value.seo_keywords).filter((k) => k !== kw).join(", ") })
-              }
-            />
-          ))}
-        </Stack>
-        <TextField
-          {...fieldProps("seo_keywords", "SEO Keywords", SEO_LIMITS.keywords)}
-          onChange={(e) => onChange({ seo_keywords: e.target.value })}
-        />
-      </Box>
+      {showKeywords ? (
+        <Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+            Keywords (comma separated, up to {SEO_LIMITS.keywords} chars)
+          </Typography>
+          <Stack direction="row" flexWrap="wrap" gap={0.75} sx={{ mb: 1 }}>
+            {splitKeywords(value.seo_keywords).map((kw) => (
+              <Chip
+                key={kw}
+                label={kw}
+                size="small"
+                onDelete={() =>
+                  onChange({ seo_keywords: splitKeywords(value.seo_keywords).filter((k) => k !== kw).join(", ") })
+                }
+              />
+            ))}
+          </Stack>
+          <TextField
+            {...fieldProps("seo_keywords", "SEO Keywords", SEO_LIMITS.keywords)}
+            onChange={(e) => onChange({ seo_keywords: e.target.value })}
+          />
+        </Box>
+      ) : (
+        keywordsHiddenNote && (
+          <Typography variant="caption" color="text.secondary">
+            {keywordsHiddenNote}
+          </Typography>
+        )
+      )}
 
       <Divider />
 
