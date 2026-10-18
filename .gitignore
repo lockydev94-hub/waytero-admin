@@ -29,3 +29,6 @@ yarn-error.log*
 *.swp
 .DS_Store
 Thumbs.db
+
+# Generated image fixtures for _qa/upload-limits-qa.cjs (12 MB, regenerable)
+_qa/fixtures/
