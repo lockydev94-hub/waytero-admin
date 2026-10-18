@@ -95,10 +95,12 @@ export interface SectionVariant {
   text_alignment: TextAlignment | null;
   overlay_opacity: number | null;
   /**
-   * Structured content (JSONB) for sections whose copy can't fit in the
-   * fixed typed slots — e.g. HOW_IT_WORKS `{steps:[…]}`, OFFERS `{offers:[…]}`,
-   * FAQ `{faqs:[…]}`, STATS `{stats:[…]}`, POPULAR_DESTINATIONS
-   * `{destinations:[…]}`, FEATURED_HOTELS `{hotels:[…]}`.
+   * Structured content (JSONB) for bands whose copy does not fit the typed
+   * slots — HERO `{marquee_items:[…]}`, SERVICES/WHY_US `{items:[…]}`,
+   * STATS `{stats:[…]}`, HOW_IT_WORKS `{steps:[…]}`, TESTIMONIALS
+   * `{testimonials:[…]}`, PARTNERS `{partners:[…], cta:{…}}`, FAQ `{faqs:[…]}`.
+   * The keys each band accepts are enforced by the backend; the editor builds
+   * them from typed inputs (see pages/cms/components/content).
    */
   content: Record<string, unknown> | null;
   /**
@@ -141,8 +143,10 @@ export type SectionVariantUpdatePayload = Partial<SectionVariantCreatePayload>;
 
 // ── Content picker ─────────────────────────────────────────────
 // The add/edit-variant modal can pull live records out of the database
-// to seed a section's structured content instead of hand-typing JSON.
-// `type` is one of: HOTELS | COUPONS | DESTINATIONS | SERVICES.
+// to fill a band's typed list instead of the admin entering them.
+// `type` is one of: SERVICES | REVIEWS | PARTNERS | HOTELS | COUPONS |
+// DESTINATIONS — the last three are served but unused, because the bands
+// they once fed now build their cards from live data.
 export type CmsPickerItem = Record<string, unknown>;
 
 export interface CmsPickerResult {

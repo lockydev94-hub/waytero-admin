@@ -32,7 +32,7 @@ import {
 } from "@mui/material";
 import {
   ArrowBack, Add, Edit, Delete, PowerSettingsNew,
-  Star, StarBorder, Schedule, Refresh, Storage,
+  Star, StarBorder, Schedule, Refresh,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
@@ -45,6 +45,12 @@ import { apiErrorMessage } from "../../utils/apiError";
 
 import MediaUploader, { CropSpec } from "./components/MediaUploader";
 import ContentDataPicker, { ContentPickerConfig } from "./components/ContentDataPicker";
+import SectionContentEditor from "./components/content/SectionContentEditor";
+import { SECTION_CONTENT_SCHEMA, STRING_ROW_KEY } from "./components/content/sectionContentSchema";
+import {
+  blockingIssues, emptyContentState, emptyItem, hydrateContent, serializeContent,
+  validateContent, type ContentState, type ItemState,
+} from "./components/content/sectionContentState";
 
 // ── Per-section slot templates ─────────────────────────────────
 // The common slot set is used for every variant. Section key
@@ -83,7 +89,9 @@ const SECTION_DEFAULT_TAG: Record<string, string> = {
   WHY_US:        "Why choose us",
   TOUR_PACKAGES: "Curated experiences",
   TESTIMONIALS:  "Loved by travelers",
-  STATS:         "Trusted across India",
+  STATS:         "",  // was "Trusted across India" — a coverage claim the
+                     // platform cannot prove; the band prints its own
+                     // "By the numbers" instead (StatsSection.tsx:20).
   PARTNERS:      "Trusted partners",
   CTA:           "",
   OFFERS:        "Limited-time deals",
@@ -98,40 +106,17 @@ const SECTION_DEFAULT_TAG: Record<string, string> = {
   BLOG:          "Travel stories",
 };
 
-// ── Content schema hints ───────────────────────────────────────
-// These sections read a JSONB `content` column; the editor below
-// exposes a monospace JSON field so admins can author the structured
-// payload. The hint shows the exact shape the renderer expects.
+// ── Structured content ─────────────────────────────────────────
+// Each band's JSONB shape lives in components/content/sectionContentSchema.ts,
+// which drives the typed rows, the database picker, the save-time validation
+// and the read-only preview. There is no raw-JSON textarea in this dialog any
+// more — admins type values and pick records, and the schema converts.
 //
 // Bands whose cards come from a live table (FEATURED_HOTELS,
-// POPULAR_DESTINATIONS, TOUR_PACKAGES, OFFERS, BLOG) are absent on
-// purpose: they read no content array, so the backend now rejects those
-// keys and the only content they accept is copy. Author their cards on
-// the page that owns them.
-const CONTENT_SCHEMA_HINT: Record<string, string> = {
-  HOW_IT_WORKS:
-    '{"steps": [{"title": "…", "description": "…", "icon": "Search | CalendarCheck | ShieldCheck | Plane | Car | Wallet | …"}]}',
-  HERO:
-    '{"marquee_items": [{"icon": "Layers | ReceiptText | ShieldCheck | Store | …", "label": "…", "sublabel": "…"}]} — the scrolling strip under the hero. Empty or absent means no strip.',
-  FAQ:
-    '{"faqs": [{"question": "…", "answer": "…"}]}',
-  STATS:
-    '{"stats": [{"value": 50000, "suffix": "+", "label": "Happy Travelers"}]}',
-};
-
-// ── Content data pickers ───────────────────────────────────────
-// Sections that store a copy array built from live records get a
-// "browse database" button in the modal. `type` hits
-// GET /cms/picker-items?type=… and `key` is the content JSON array the
-// selected records are appended to. Only SERVICES has such a key today.
-const CONTENT_PICKERS: Record<string, ContentPickerConfig> = {
-  SERVICES: {
-    type: "SERVICES",
-    key: "items",
-    label: "Service types",
-    help: "Pulls active service types (Cab / Hotel / Tour) from the database.",
-  },
-};
+// POPULAR_DESTINATIONS, TOUR_PACKAGES, OFFERS, BLOG, POPULAR_ROUTES,
+// POPULAR_CITIES) deliberately have no editor: the homepage fetches their cards
+// as it renders, so the backend rejects a content array for them and only the
+// copy fields above do anything. They get an explainer instead.
 
 // ── Crop specs ─────────────────────────────────────────────────
 // Each MediaUploader accepts an optional CropSpec. When set, the
@@ -221,10 +206,39 @@ export default function SectionEditorPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<SectionVariant | null>(null);
-  const [contentText, setContentText] = useState<string>("");
-  const [contentError, setContentError] = useState<string | null>(null);
+  const [content, setContent] = useState<ContentState>(() => emptyContentState(sectionKey));
+  const [quarantineAck, setQuarantineAck] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerConfig = CONTENT_PICKERS[sectionKey];
+
+  // Which array a database picker fills is declared by the band's schema,
+  // not by a map that can drift from it.
+  const pickerTarget = useMemo(() => {
+    for (const a of SECTION_CONTENT_SCHEMA[sectionKey]?.arrays ?? []) {
+      if (a.picker) return { spec: a, picker: a.picker };
+    }
+    return null;
+  }, [sectionKey]);
+
+  const pickerConfig: ContentPickerConfig | null = pickerTarget
+    ? {
+        type: pickerTarget.picker.type,
+        label: pickerTarget.picker.label,
+        help: pickerTarget.picker.help,
+      }
+    : null;
+
+  const contentIssues = useMemo(
+    () => validateContent(sectionKey, content, quarantineAck),
+    [sectionKey, content, quarantineAck],
+  );
+  const contentErrors = blockingIssues(contentIssues);
+
+  // Navigating between two section pages reuses this component; stale rows
+  // from the previous band must not be written into this one.
+  useEffect(() => {
+    setContent(emptyContentState(sectionKey));
+    setQuarantineAck(false);
+  }, [sectionKey]);
 
   useEffect(() => {
     if (section) document.title = `CMS — ${section.display_name}`;
@@ -285,8 +299,8 @@ export default function SectionEditorPage() {
       variant_tag: SECTION_DEFAULT_TAG[sectionKey] ?? "",
     });
     setEditingId(null);
-    setContentText("");
-    setContentError(null);
+    setContent(emptyContentState(sectionKey));
+    setQuarantineAck(false);
     setOpen(true);
   };
 
@@ -309,13 +323,12 @@ export default function SectionEditorPage() {
       animation_style:     v.animation_style ?? "NONE",
       text_alignment:      v.text_alignment ?? "LEFT",
       overlay_opacity:     v.overlay_opacity ?? 0.4,
-      content:             v.content ?? null,
       service_type:        v.service_type ?? null,
       starts_at:           v.starts_at ?? null,
       ends_at:             v.ends_at ?? null,
     });
-    setContentText(v.content ? JSON.stringify(v.content, null, 2) : "");
-    setContentError(null);
+    setContent(hydrateContent(sectionKey, v.content));
+    setQuarantineAck(false);
     setEditingId(v.id);
     setOpen(true);
   };
@@ -331,22 +344,22 @@ export default function SectionEditorPage() {
       return;
     }
 
-    // Structured content — parse the JSON textarea into an object (or null).
-    let parsedContent: Record<string, unknown> | null = null;
-    if (contentText.trim()) {
-      try {
-        const parsed = JSON.parse(contentText);
-        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-          setContentError("Content must be a JSON object, e.g. { \"steps\": [...] }");
-          return;
-        }
-        parsedContent = parsed as Record<string, unknown>;
-      } catch {
-        setContentError("Content is not valid JSON — fix the syntax before saving.");
-        return;
-      }
+    // Keys the site cannot use are only removable with an explicit nod, so a
+    // save can never quietly delete something an admin authored earlier.
+    const quarantined = Object.keys(content.quarantined).length + (content.unparseable !== null ? 1 : 0);
+    if (quarantined > 0 && !quarantineAck) {
+      enqueueSnackbar("Confirm removing the unsupported content keys first", { variant: "warning" });
+      return;
     }
-    setContentError(null);
+    if (contentErrors.length > 0) {
+      enqueueSnackbar(
+        contentErrors[0].message.replace(/[.]+$/, ""),
+        { variant: "error" },
+      );
+      return;
+    }
+
+    const parsedContent = serializeContent(sectionKey, content);
 
     const payload: SectionVariantCreatePayload = {
       ...form,
@@ -372,28 +385,61 @@ export default function SectionEditorPage() {
     }
   };
 
-  // Merge records picked from the database into the content JSON editor.
-  const applyPickedItems = (items: CmsPickerItem[]) => {
-    if (!pickerConfig) return;
-    let parsed: Record<string, unknown> = {};
-    if (contentText.trim()) {
-      try {
-        parsed = JSON.parse(contentText) as Record<string, unknown>;
-      } catch {
-        enqueueSnackbar("Content JSON is invalid — fix it before adding records.", {
-          variant: "error",
-        });
-        return;
-      }
+  // Merge records picked from the database into the typed rows. Each record is
+  // projected through the band's field list, so a picker cannot smuggle its
+  // dialog-only display keys (a rating badge, say) into stored content.
+  const applyPickedItems = (picked: CmsPickerItem[]) => {
+    if (!pickerTarget) return;
+    const { spec, picker } = pickerTarget;
+    const rows = content.arrays[spec.key] ?? [];
+    const room = spec.max - rows.length;
+    if (room <= 0) {
+      enqueueSnackbar(`This band holds at most ${spec.max} ${spec.itemLabel}s`, { variant: "warning" });
+      return;
     }
-    const key = pickerConfig.key;
-    const existing = Array.isArray(parsed[key]) ? (parsed[key] as unknown[]) : [];
-    parsed[key] = [...existing, ...items];
-    setContentText(JSON.stringify(parsed, null, 2));
-    setContentError(null);
-    enqueueSnackbar(`${items.length} record(s) added to the “${key}” array`, {
-      variant: "success",
+
+    const textOf = (row: ItemState) => (
+      spec.rowKind === "string"
+        ? String(row.values[STRING_ROW_KEY] ?? "")
+        : String(row.values[spec.keyField ?? spec.fields[0]?.key ?? ""] ?? "")
+    ).trim().toLowerCase();
+    const taken = new Set(rows.map(textOf).filter(Boolean));
+
+    const added: ItemState[] = [];
+    let skipped = 0;
+    for (const item of picked) {
+      if (added.length >= room) { skipped += 1; continue; }
+      const base = emptyItem(spec);
+      if (spec.rowKind === "string") {
+        const text = String(item[picker.stringField ?? "name"] ?? "").trim();
+        if (!text || taken.has(text.toLowerCase())) { skipped += 1; continue; }
+        base.values[STRING_ROW_KEY] = text;
+        taken.add(text.toLowerCase());
+        added.push(base);
+        continue;
+      }
+      for (const field of spec.fields) {
+        const v = item[field.key];
+        if (typeof v === "string" || typeof v === "number") base.values[field.key] = v;
+      }
+      const fingerprint = textOf(base);
+      if (fingerprint && taken.has(fingerprint)) { skipped += 1; continue; }
+      if (fingerprint) taken.add(fingerprint);
+      added.push(base);
+    }
+
+    if (added.length === 0) {
+      enqueueSnackbar("Those records are already in this list", { variant: "info" });
+      return;
+    }
+    setContent({
+      ...content,
+      arrays: { ...content.arrays, [spec.key]: [...rows, ...added] },
     });
+    enqueueSnackbar(
+      `${added.length} added${skipped ? `, ${skipped} already present` : ""}`,
+      { variant: "success" },
+    );
   };
 
   // ── Render ───────────────────────────────────────────────────
@@ -580,64 +626,29 @@ export default function SectionEditorPage() {
               />
             </Grid>
 
-            {/* ── Structured content (JSON) ────────────────────────
-                Sections with a content schema (HERO marquee, SERVICES
-                items, HOW_IT_WORKS steps, FAQ faqs, STATS stats) store
-                their payload here. Admin authors the JSON directly; the
-                public homepage spreads it into the variant payload, so
-                the backend rejects keys this band's renderer never reads
-                and keys that would overwrite a field above. */}
+            {/* ── Structured content ───────────────────────────────
+                The band's schema decides what appears here: typed rows
+                for the sections that store content arrays, an explainer
+                for the bands whose cards the homepage fetches live. On
+                save the rows are converted back into the JSONB shape the
+                public renderer reads. */}
             <Grid item xs={12}>
               <Divider>
                 <Typography variant="caption" color="text.secondary">
-                  Structured content (JSON)
+                  Structured content
                 </Typography>
               </Divider>
             </Grid>
-            {CONTENT_SCHEMA_HINT[sectionKey] && (
-              <Grid item xs={12}>
-                <Alert severity="info" sx={{ "& code": { fontSize: 12 } }}>
-                  Expected shape for <strong>{sectionKey}</strong>:{" "}
-                  <code>{CONTENT_SCHEMA_HINT[sectionKey]}</code>
-                </Alert>
-              </Grid>
-            )}
             <Grid item xs={12}>
-              <TextField
-                fullWidth
-                size="small"
-                label="Content (JSON)"
-                multiline
-                minRows={4}
-                maxRows={14}
-                value={contentText}
-                onChange={(e) => setContentText(e.target.value)}
-                error={!!contentError}
-                helperText={contentError || "JSON object or empty. Used for steps, offers, faqs, stats, destinations, hotels — depending on the section."}
-                sx={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace", fontSize: 12 }}
+              <SectionContentEditor
+                sectionKey={sectionKey}
+                state={content}
+                issues={contentIssues}
+                onBrowse={pickerConfig ? () => setPickerOpen(true) : undefined}
+                quarantineAck={quarantineAck}
+                onQuarantineAck={setQuarantineAck}
+                onChange={setContent}
               />
-            </Grid>
-            <Grid item xs={12}>
-              <Stack direction="row" spacing={1}>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    try {
-                      setContentText(JSON.stringify(JSON.parse(contentText || "{}"), null, 2));
-                      setContentError(null);
-                    } catch {
-                      setContentError("Cannot prettify — content is not valid JSON.");
-                    }
-                  }}
-                >
-                  Prettify JSON
-                </Button>
-                {pickerConfig && (
-                  <Button size="small" variant="outlined" startIcon={<Storage />} onClick={() => setPickerOpen(true)}>
-                    Browse database…
-                  </Button>
-                )}
-              </Stack>
             </Grid>
 
             <Grid item xs={12}>

@@ -3,15 +3,17 @@
 // Doc Ref: Migration 0044_website_cms
 //
 //  Populates a section's structured content from live database
-//  records (hotels, coupons, destinations, services) instead of
-//  hand-typing JSON. The chosen records are appended to the
-//  content JSON under the section's array key.
+//  records instead of the admin typing them in. Chosen records become
+//  rows in the section's typed list; the editor converts them to the
+//  stored JSON shape on save.
 //
 //  Picker types (backend GET /cms/picker-items?type=…):
-//    HOTELS       → FEATURED_HOTELS       hotels[]
-//    COUPONS      → OFFERS                offers[]
-//    DESTINATIONS → POPULAR_DESTINATIONS  destinations[]
-//    SERVICES     → SERVICES              items[]
+//    SERVICES     → SERVICES           items[]
+//    REVIEWS      → TESTIMONIALS       testimonials[]  (approved only)
+//    PARTNERS     → PARTNERS           partners[]      (approved/active only)
+//    HOTELS / COUPONS / DESTINATIONS remain served, but the bands that
+//    used them fetch their cards live, so nothing wires them up — the
+//    backend rejects a content array for those sections.
 // ============================================================
 
 import { useEffect, useMemo, useState } from "react";
@@ -30,8 +32,7 @@ import {
 import { apiErrorMessage } from "../../../utils/apiError";
 
 export interface ContentPickerConfig {
-  type: string;          // HOTELS | COUPONS | DESTINATIONS | SERVICES
-  key: string;           // content JSON array key, e.g. "hotels", "offers"
+  type: string;          // SERVICES | REVIEWS | PARTNERS
   label: string;         // human label for the source
   help: string;
 }
@@ -133,9 +134,9 @@ export default function ContentDataPicker({
         Pick {config.label.toLowerCase()} from database
       </DialogTitle>
       <DialogContent dividers>
-        <Alert severity="info" sx={{ mb: 2, "& strong": { fontWeight: 700 } }}>
-          Adds records into the <code>{config.key}</code> array of the
-          content JSON. {config.help}
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Adds the selected records to the <strong>{config.label}</strong> list
+          for this section. {config.help}
         </Alert>
 
         <TextField
@@ -205,8 +206,9 @@ export default function ContentDataPicker({
           }}
         >
           <Typography variant="caption" color="text.secondary">
-            Records are pulled as-is — review prices, images and ratings in the
-            JSON editor before activating this variant on the homepage.
+            Records arrive with the fields the database holds. Icon, tone and any
+            blank text stay for you to fill in the list — saving will point out
+            what is still missing.
           </Typography>
         </Box>
       </DialogContent>
