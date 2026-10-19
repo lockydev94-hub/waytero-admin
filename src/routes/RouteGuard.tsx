@@ -22,7 +22,7 @@ export function RouteGuard({ allowedRoles }: RouteGuardProps) {
     return <Navigate to="/unauthorized" replace />;
   }
 
-  // Session validation on open + 10-min idle auto-logout for authed users
+  // Session validation on open + the idle/daily session rules (SessionManager)
   return (
     <SessionManager>
       <Outlet />

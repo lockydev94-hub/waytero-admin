@@ -54,8 +54,12 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
   const [searchParams] = useSearchParams();
-  const [inactivityNotice, setInactivityNotice] = useState(
-    searchParams.get("reason") === "inactivity"
+  // The idle window is configurable and the daily cut-off comes from the
+  // server, so the notice says what happened without quoting a number this
+  // page cannot know before signing in.
+  const signOutReason = searchParams.get("reason");
+  const [signOutNotice, setSignOutNotice] = useState(
+    signOutReason === "inactivity" || signOutReason === "daily" ? signOutReason : null
   );
 
   const [method, setMethod] = useState<LoginMethod>("password");
@@ -301,9 +305,11 @@ export default function LoginPage() {
               <Tab icon={<Smartphone sx={{ fontSize: 16 }} />} iconPosition="start" value="otp" label="OTP" />
             </Tabs>
 
-            {inactivityNotice && (
-              <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setInactivityNotice(false)}>
-                You were signed out automatically after 10 minutes of inactivity. Please sign in again.
+            {signOutNotice && (
+              <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setSignOutNotice(null)}>
+                {signOutNotice === "daily"
+                  ? "The dashboard signs everyone out at the daily cut-off time. Sign in again to continue."
+                  : "You were signed out after a period of inactivity. Sign in again to continue."}
               </Alert>
             )}
 

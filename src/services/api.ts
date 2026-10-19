@@ -5,6 +5,7 @@
 // ============================================================
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 import { API_BASE_URL, TOKEN_KEYS } from "../constants";
+import { clearLockState, useLockStore } from "../stores/lockStore";
 
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = [];
@@ -14,14 +15,40 @@ function processQueue(error: unknown, token: string | null) {
   failedQueue = [];
 }
 
+// While the dashboard is locked, only the calls the lock screen itself needs
+// may go through. Everything else — TanStack Query background refetches, the
+// notification bell, a page that was mounted before the lock — has to stop, or
+// a locked screen would keep reading and writing behind the overlay.
+// /auth/refresh stays allowed because the access token routinely expires during
+// a long lock, and mpin/verify authenticates against the user row through the
+// JWT subject rather than the age of the token.
+const LOCK_ALLOWED = [
+  "/auth/admin/mpin/verify",
+  "/auth/admin/session-config",
+  "/auth/refresh",
+  "/auth/logout",
+];
+
+function portalLockedError() {
+  const error = new Error("The dashboard is locked.") as Error & { code: string };
+  error.code = "PORTAL_LOCKED";
+  return error;
+}
+
 const apiClient: AxiosInstance = axios.create({
   baseURL: API_BASE_URL,
   timeout: 15_000,
   headers: { "Content-Type": "application/json", Accept: "application/json" },
 });
 
-// REQUEST — attach Bearer token
+// REQUEST — freeze locked traffic, then attach the Bearer token
 apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  if (useLockStore.getState().isLocked) {
+    const url = config.url ?? "";
+    if (!LOCK_ALLOWED.some((allowed) => url.includes(allowed))) {
+      return Promise.reject(portalLockedError());
+    }
+  }
   const token = localStorage.getItem(TOKEN_KEYS.ACCESS);
   if (token) config.headers["Authorization"] = `Bearer ${token}`;
   return config;
@@ -96,7 +123,10 @@ export function clearSession(redirect?: string) {
   if (_onSessionCleared) _onSessionCleared();
   // 2. Clear tokens from localStorage
   Object.values(TOKEN_KEYS).forEach((k) => localStorage.removeItem(k));
-  // 3. Clear Zustand persisted auth store so isAuthenticated=false on next load
+  // 3. Drop the dashboard lock: a fresh sign-in must not inherit an overlay
+  //    or yesterday's idle timestamp.
+  clearLockState();
+  // 4. Clear Zustand persisted auth store so isAuthenticated=false on next load
   try {
     const stored = localStorage.getItem("wt_admin_auth");
     if (stored) {
@@ -110,7 +140,7 @@ export function clearSession(redirect?: string) {
       }
     }
   } catch { /* ignore */ }
-  // 4. Redirect (skip when already on the login page)
+  // 5. Redirect (skip when already on the login page)
   const target = redirect || "/login";
   if (window.location.pathname !== "/login") {
     window.location.href = target;

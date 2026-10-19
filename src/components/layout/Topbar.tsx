@@ -5,16 +5,18 @@
 // switch, notifications and the account menu.
 // ============================================================
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   AppBar, Toolbar, Typography, IconButton, Avatar, Tooltip, Menu,
-  MenuItem, Divider, Box,
+  MenuItem, Divider, Box, Chip,
 } from "@mui/material";
 import {
-  Menu as MenuIcon, ChevronLeft, LightMode, DarkMode, Logout,
+  Menu as MenuIcon, ChevronLeft, LightMode, DarkMode, Logout, Lock as LockIcon,
 } from "@mui/icons-material";
 import { useAuthStore } from "../../stores/authStore";
 import { useUiStore } from "../../stores/uiStore";
+import { useLockStore } from "../../stores/lockStore";
+import { postSessionMessage } from "../../hooks/useBroadcastSession";
 import { resolveNavTitle } from "../../constants";
 import { GlobalSearch } from "../search/GlobalSearch";
 import NotificationsDropdown from "../notifications/NotificationsDropdown";
@@ -25,14 +27,28 @@ interface TopbarProps {
   onLogout: () => void;
 }
 
+function mmss(ms: number) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
 export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) {
   const location = useLocation();
+  const navigate = useNavigate();
   const { user } = useAuthStore();
   const { themeMode, toggleTheme } = useUiStore();
+  const idleRemainingMs = useLockStore((s) => s.idleRemainingMs);
+  const hasMpin = useLockStore((s) => Boolean(s.sessionConfig?.has_mpin));
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const openMenu = (el: HTMLElement | null) => setAnchorEl(el);
   const closeMenu = () => setAnchorEl(null);
+
+  const lockNow = () => {
+    closeMenu();
+    useLockStore.getState().lock();
+    postSessionMessage({ type: "lock" });
+  };
 
   return (
     <AppBar position="sticky" elevation={0}>
@@ -47,6 +63,19 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
         </Typography>
 
         <GlobalSearch />
+
+        {/* Idle countdown — only meaningful once an unlock PIN exists */}
+        {hasMpin && (
+          <Tooltip title="The dashboard locks after this much inactivity. Move the mouse or press a key to reset it.">
+            <Chip
+              size="small"
+              variant="outlined"
+              icon={<LockIcon />}
+              label={`locks in ${mmss(idleRemainingMs)}`}
+              sx={{ display: { xs: "none", sm: "flex" }, fontVariantNumeric: "tabular-nums" }}
+            />
+          </Tooltip>
+        )}
 
         <Tooltip title={themeMode === "light" ? "Dark mode" : "Light mode"}>
           <IconButton onClick={toggleTheme} size="small">
@@ -86,6 +115,12 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
           </Box>
 
           <Divider />
+
+          {hasMpin && (
+            <MenuItem onClick={lockNow}>
+              <LockIcon fontSize="small" sx={{ mr: 1.5 }} /> Lock now
+            </MenuItem>
+          )}
 
           <MenuItem
             onClick={() => { closeMenu(); onLogout(); }}

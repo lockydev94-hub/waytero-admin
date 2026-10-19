@@ -17,10 +17,19 @@ import { chatService } from "../services/chat.service";
 
 const HEARTBEAT_MS = 30_000;
 
-export function useAdminPresence() {
+export function useAdminPresence({ enabled = true }: { enabled?: boolean } = {}) {
   const onlineRef = useRef(false);
 
   useEffect(() => {
+    if (!enabled) {
+      // Locked portal: stop beating. The explicit "offline" call is blocked
+      // by the locked-request freeze, so presence clears when the heartbeat
+      // ages past the server's 90s TTL — a locked admin stops routing chats
+      // within a minute and a half instead of all day.
+      onlineRef.current = false;
+      return;
+    }
+
     let cancelled = false;
 
     const beat = async () => {
@@ -55,5 +64,5 @@ export function useAdminPresence() {
       window.removeEventListener("beforeunload", onUnload);
       void markOffline();
     };
-  }, []);
+  }, [enabled]);
 }

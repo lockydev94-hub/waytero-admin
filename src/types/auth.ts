@@ -78,6 +78,24 @@ export interface AdminOTPLoginPayload {
   device_name?: string;
 }
 
+/** Mirrors backend SessionConfigResponse — GET /auth/admin/session-config */
+export interface SessionConfig {
+  has_mpin: boolean;
+  /** effective idle window (the admin's own value, or the platform default) */
+  idle_minutes: number;
+  /** the admin's own setting; null = inherits idle_default_minutes */
+  idle_lock_minutes: number | null;
+  idle_default_minutes: number;
+  daily_logout_hour: number;
+  timezone: string;
+  /** ISO timestamp — the only clock the daily-logout deadline is counted against */
+  server_now: string;
+  mpin_locked_until: string | null;
+  mpin_attempts_remaining: number | null;
+  mpin_min_length: number;
+  access_token_expires_in: number;
+}
+
 export interface ApiError {
   success: false;
   message: string;

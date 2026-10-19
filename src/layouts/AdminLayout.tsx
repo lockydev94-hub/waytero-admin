@@ -17,7 +17,9 @@ import { authService }  from "../services/auth.service";
 import { NAV_SECTIONS, findActiveNavItem } from "../constants";
 import { NAV_ICONS }    from "../constants/icons";
 import { useGstEnabled } from "../hooks/useGstEnabled";
+import { useLockStore } from "../stores/lockStore";
 import { Topbar } from "../components/layout/Topbar";
+import LockScreen from "../components/layout/LockScreen";
 import NewChatModal from "../components/chat/NewChatModal";
 import BookingAcceptModal from "../components/bookings/BookingAcceptModal";
 import { useAdminPresence } from "../hooks/useAdminPresence";
@@ -33,12 +35,18 @@ export function AdminLayout() {
   const { user, clearAuth, refreshToken } = useAuthStore();
   const { sidebarOpen, toggleSidebar, setSidebar } = useUiStore();
   const { isGstEnabled } = useGstEnabled();
+  const isLocked = useLockStore((s) => s.isLocked);
 
   // Presence heartbeat — while this portal tab is open the admin counts
   // as online support, so customer chats can route here (smart routing).
-  useAdminPresence();
+  useAdminPresence({ enabled: !isLocked });
 
   const drawerOpen = isMobile ? false : sidebarOpen;
+
+  // Locked: the shell is unmounted, not hidden. The sidebar, the notification
+  // bell and Ctrl+K search do not exist behind the overlay, so nothing there
+  // can navigate or read data while the PIN is outstanding.
+  if (isLocked) return <LockScreen />;
 
   // Role filter + feature-flag filter: the Tax & GST entry only appears
   // when the platform-level GST_ENABLED config is on (toggled in Settings).

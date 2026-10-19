@@ -7,6 +7,7 @@ import { persist } from "zustand/middleware";
 import type { AuthUser } from "../types/auth";
 import { TOKEN_KEYS } from "../constants";
 import { registerSessionClearedCallback } from "../services/api";
+import { useLockStore } from "./lockStore";
 
 interface AuthStore {
   user:            AuthUser | null;
@@ -38,6 +39,10 @@ export const useAuthStore = create<AuthStore>()(
         setAuth: (user, accessToken, refreshToken) => {
           localStorage.setItem(TOKEN_KEYS.ACCESS,  accessToken);
           localStorage.setItem(TOKEN_KEYS.REFRESH, refreshToken);
+          // A fresh sign-in starts an unlocked session with a fresh idle
+          // window; otherwise yesterday's persisted lock would shadow the
+          // dashboard the moment this admin logs in again.
+          useLockStore.getState().startSession();
           set({ user, accessToken, refreshToken, isAuthenticated: true });
         },
 
