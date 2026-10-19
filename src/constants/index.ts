@@ -47,7 +47,7 @@ export const NAV_KEYS = [
   "cancellation-requests", "cancellation-policy", "account-deletion",
   "notices", "email-logs",
   "cms", "offers", "blog", "landing-pages", "website-pages",
-  "users", "work-hours", "audit", "settings",
+  "users", "work-hours", "audit", "settings", "branches",
 ] as const;
 
 export type NavKey = typeof NAV_KEYS[number];
@@ -155,6 +155,7 @@ export const NAV_SECTIONS: NavSection[] = [
     key: "system",
     title: "System",
     items: [
+      { key: "branches", label: "Branch Offices", icon: "Storefront", path: "/branches", roles: ["SUPER_ADMIN"], keywords: "branch office city location head office headquarters register" },
       { key: "users", label: "Users", icon: "ManageAccounts", path: "/users", roles: ["SUPER_ADMIN"], keywords: "user admin staff employee" },
       { key: "work-hours", label: "Work Hours", icon: "History", path: "/work-hours", roles: ["SUPER_ADMIN"], keywords: "attendance leave staff hours login time presence" },
       { key: "audit", label: "Audit Logs", icon: "History", path: "/audit", roles: ["SUPER_ADMIN","ADMIN"], keywords: "audit log activity trail" },
@@ -211,6 +212,41 @@ export function resolveNavTitle(pathname: string): string {
     if (pattern.test(pathname)) return title;
   }
   return findActiveNavItem(pathname)?.label ?? "WayTero Admin";
+}
+
+// ── Which roles may open which route ─────────────────────────────────────────
+// The sidebar hides a row you have no business in; that is a courtesy, not a
+// control — anyone can type /users into the address bar. RouteGuard reads this
+// table so the hidden rows are also refused. The list is derived from
+// NAV_SECTIONS rather than written twice, because a second table is a second
+// place to forget an update: change a nav item's roles and its gate follows.
+//
+// This is the client-side half only. Every one of these screens enforces role
+// and branch in SQL on the server; a page that renders here but whose API 403s
+// is a page the owner will see an error on, not a way in.
+const ALL_STAFF_ROLES: NavRole[] = ["SUPER_ADMIN","ADMIN","CCO","FINANCE_MANAGER","VERIFICATION_OFFICER"];
+
+// Routes the sidebar does not list, so no nav prefix names them. Everything
+// else inherits its nav item's roles by prefix — "/bookings/42" is Bookings,
+// and adding a detail route needs no entry here.
+const EXTRA_ROUTE_ROLES: Array<[RegExp, NavRole[]]> = [
+  [/^\/profile$/,      ALL_STAFF_ROLES],
+  [/^\/unauthorized$/, ALL_STAFF_ROLES],
+];
+
+/**
+ * Roles allowed on this pathname, or null when nothing claims it.
+ *
+ * A detail route inherits its list page: "/bookings/42" resolves to the
+ * Bookings nav item by prefix, so it needs no entry of its own. Anything that
+ * matches no nav path stays unrestricted here and is still refused by the
+ * server — null means "the sidebar was never the gate for this", not "open".
+ */
+export function allowedRolesForPath(pathname: string): NavRole[] | null {
+  for (const [pattern, roles] of EXTRA_ROUTE_ROLES) {
+    if (pattern.test(pathname)) return roles;
+  }
+  return findActiveNavItem(pathname)?.roles ?? null;
 }
 
 // ── Audit log filter vocabularies ─────────────────────────────────────────────

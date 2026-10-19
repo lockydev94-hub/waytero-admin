@@ -8,6 +8,7 @@ import type { AuthUser } from "../types/auth";
 import { TOKEN_KEYS } from "../constants";
 import { registerSessionClearedCallback } from "../services/api";
 import { useLockStore } from "./lockStore";
+import { useBranchFilterStore } from "./branchFilterStore";
 
 interface AuthStore {
   user:            AuthUser | null;
@@ -43,6 +44,9 @@ export const useAuthStore = create<AuthStore>()(
           // window; otherwise yesterday's persisted lock would shadow the
           // dashboard the moment this admin logs in again.
           useLockStore.getState().startSession();
+          // ...and opens on the whole platform, not on yesterday's office: a
+          // branch manager must never inherit a super admin's saved choice.
+          useBranchFilterStore.getState().clear();
           set({ user, accessToken, refreshToken, isAuthenticated: true });
         },
 

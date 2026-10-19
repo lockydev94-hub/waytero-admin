@@ -6,6 +6,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
 import { API_BASE_URL, TOKEN_KEYS } from "../constants";
 import { clearLockState, useLockStore } from "../stores/lockStore";
+import { useBranchFilterStore } from "../stores/branchFilterStore";
 
 let isRefreshing = false;
 let failedQueue: Array<{ resolve: (v: string) => void; reject: (e: unknown) => void }> = [];
@@ -51,6 +52,13 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   }
   const token = localStorage.getItem(TOKEN_KEYS.ACCESS);
   if (token) config.headers["Authorization"] = `Bearer ${token}`;
+  // The super admin's branch switcher, in the one place every list request
+  // passes through — 30 per-service `branch_id` params would be 30 places to
+  // forget. Absent means "All branches". A branch account's own office is
+  // decided from its user row on the server, and this header is ignored there,
+  // so it can only narrow a super admin, never widen anyone.
+  const branchId = useBranchFilterStore.getState().branchId;
+  if (branchId !== null) config.headers["X-Branch-Id"] = String(branchId);
   return config;
 });
 
@@ -126,6 +134,9 @@ export function clearSession(redirect?: string) {
   // 3. Drop the dashboard lock: a fresh sign-in must not inherit an overlay
   //    or yesterday's idle timestamp.
   clearLockState();
+  // ...and the same for the super admin's branch switcher, so a saved office
+  // choice cannot follow the session into the next sign-in.
+  useBranchFilterStore.getState().clear();
   // 4. Clear Zustand persisted auth store so isAuthenticated=false on next load
   try {
     const stored = localStorage.getItem("wt_admin_auth");

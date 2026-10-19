@@ -67,6 +67,7 @@ const NoticesPage               = lazy(() => import("../pages/notices/NoticesPag
 const OnboardingDocsPage        = lazy(() => import("../pages/onboarding-docs/OnboardingDocsPage"));
 const ProfilePage               = lazy(() => import("../pages/profile/ProfilePage"));
 const WorkHoursPage             = lazy(() => import("../pages/work-hours/WorkHoursPage"));
+const BranchesPage              = lazy(() => import("../pages/branches/BranchesPage"));
 
 function PageLoader() {
   return (
@@ -175,6 +176,9 @@ export function AppRoutes() {
             {/* The signed-in admin's own account, and the attendance report */}
             <Route path="/profile"                      element={<ProfilePage />} />
             <Route path="/work-hours"                   element={<WorkHoursPage />} />
+
+            {/* Branch offices — the register every queue is filtered by */}
+            <Route path="/branches"                     element={<BranchesPage />} />
           </Route>
         </Route>
 

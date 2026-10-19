@@ -20,6 +20,7 @@ import { useLockStore } from "../../stores/lockStore";
 import { postSessionMessage } from "../../hooks/useBroadcastSession";
 import { resolveNavTitle } from "../../constants";
 import { GlobalSearch } from "../search/GlobalSearch";
+import { BranchChip } from "./BranchChip";
 import NotificationsDropdown from "../notifications/NotificationsDropdown";
 
 interface TopbarProps {
@@ -64,6 +65,10 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
         </Typography>
 
         <GlobalSearch />
+
+        {/* Whose office these numbers are for — a chip for a branch account,
+            a switcher for the master admin. */}
+        <BranchChip />
 
         {/* Idle countdown — only meaningful once an unlock PIN exists */}
         {hasMpin && (

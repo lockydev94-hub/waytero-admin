@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Box, Grid, Card, CardContent, Typography, Skeleton,
   Chip, Divider, Avatar, Stack, alpha, Table, TableBody, TableCell,
-  TableHead, TableRow, TableContainer,
+  TableHead, TableRow, TableContainer, Alert,
 } from "@mui/material";
 import {
   ConfirmationNumber, Hotel, DirectionsCar, Handshake,
@@ -25,6 +25,7 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { dashboardService } from "../../services/dashboard.service";
+import { apiErrorMessage } from "../../utils/apiError";
 import { CACHE_TTL } from "../../constants";
 
 function formatCurrency(n: number) {
@@ -121,7 +122,13 @@ export default function DashboardPage() {
     retry: false,
   });
 
-  const { data: expiringDocs, isLoading: expiringLoading } = useQuery({
+  // isError matters here: this count is not branch-filtered yet, so a branch
+  // account is refused rather than shown an empty list — and "nothing is
+  // expiring" would be a lie that lets a deadline slip past.
+  const {
+    data: expiringDocs, isLoading: expiringLoading,
+    isError: expiringFailed, error: expiringError,
+  } = useQuery({
     queryKey: ["dashboard-expiring-documents"],
     queryFn: () => dashboardService.getExpiringDocuments(30),
     staleTime: CACHE_TTL.MEDIUM,
@@ -398,6 +405,10 @@ export default function DashboardPage() {
             <Stack spacing={1}>
               {[...Array(4)].map((_, i) => <Skeleton key={i} variant="rectangular" height={36} />)}
             </Stack>
+          ) : expiringFailed ? (
+            <Alert severity="info" sx={{ py: 0.5 }}>
+              {apiErrorMessage(expiringError, "This count is not available to your account yet.")}
+            </Alert>
           ) : !expiringDocs || expiringDocs.items.length === 0 ? (
             <Typography variant="body2" color="text.secondary">No documents expiring in the next 30 days.</Typography>
           ) : (

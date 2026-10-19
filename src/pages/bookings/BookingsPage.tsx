@@ -25,6 +25,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { bookingService, BookingListItem, BookingStats, PaginatedBookings } from "../../services/booking.service";
 import { format } from "date-fns";
 import { useRealtime } from "../../hooks/useRealtime";
+import { useOfficeByCity } from "../../hooks/useBranches";
+import { useAuthStore } from "../../stores/authStore";
 
 // ── Status Config ─────────────────────────────────────────────
 const BOOKING_STATUS_OPTIONS = [
@@ -121,6 +123,11 @@ function StatCard({ label, value, icon, color, loading }: {
 export default function BookingsPage() {
   const navigate = useNavigate();
   const theme = useTheme();
+  // A master admin browsing "All branches" needs to know which office each row
+  // belongs to; a branch account sees one office's rows only, so it is not
+  // shown a column of the same word repeated.
+  const seesAllBranches = useAuthStore((s) => s.user?.user_type === "SUPER_ADMIN");
+  const officeByCity = useOfficeByCity();
 
   // Filters
   const [page, setPage] = useState(0);
@@ -380,6 +387,13 @@ export default function BookingsPage() {
                       <Typography variant="body2">{item.journey_start_date || "—"}</Typography>
                       {item.city_name && (
                         <Typography variant="caption" color="text.secondary">{item.city_name}</Typography>
+                      )}
+                      {seesAllBranches && (
+                        <Tooltip title="The office that works this booking — its city decides it. Nothing is registered there yet means no branch serves this city.">
+                          <Typography variant="caption" color="text.disabled" display="block" noWrap>
+                            {officeByCity.get(item.city_id)?.name ?? "No office yet"}
+                          </Typography>
+                        </Tooltip>
                       )}
                     </TableCell>
                     <TableCell sx={{ py: 1.5 }}>

@@ -5,19 +5,14 @@
 import { useMemo } from "react";
 import { BrowserRouter } from "react-router-dom";
 import { ThemeProvider, CssBaseline } from "@mui/material";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { SnackbarProvider } from "notistack";
 
 import { createTheme } from "@mui/material/styles";
 import { theme as lightTheme } from "./app/theme";
+import { queryClient } from "./app/queryClient";
 import { useUiStore } from "./stores/uiStore";
 import { AppRoutes } from "./routes/AppRoutes";
-
-const qc = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: false },
-  },
-});
 
 export default function App() {
   const { themeMode } = useUiStore();
@@ -37,7 +32,7 @@ export default function App() {
   }, [themeMode]);
 
   return (
-    <QueryClientProvider client={qc}>
+    <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
         <SnackbarProvider maxSnack={4} anchorOrigin={{ vertical: "top", horizontal: "right" }}>

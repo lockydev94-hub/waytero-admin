@@ -312,6 +312,9 @@ export interface StaffUser {
   user_type: string; // ADMIN | CCO | VERIFICATION_OFFICER | FINANCE_MANAGER | SUPER_ADMIN
   status: string;
   is_active: boolean;
+  /** The office this account works from. Null for a super admin, who has none. */
+  branch_id: number | null;
+  branch_name: string | null;
   profile_image_url: string | null;
   created_at: string;
   last_login_at: string | null;
@@ -326,6 +329,12 @@ export interface StaffUserCreate {
   password: string;
   user_type: string;
   profile_image_url?: string;
+  /**
+   * Which office the person answers to. A super admin must state it; a branch
+   * manager may leave it out — the server files the hire under their own
+   * branch whatever this says.
+   */
+  branch_id?: number;
   profile?: Partial<StaffProfile>;
 }
 
@@ -336,6 +345,8 @@ export interface StaffUserUpdate {
   mobile_number?: string;
   user_type?: string;
   profile_image_url?: string;
+  /** Moving someone to another office is a super-admin act; server-enforced. */
+  branch_id?: number | null;
   profile?: Partial<StaffProfile>;
 }
 

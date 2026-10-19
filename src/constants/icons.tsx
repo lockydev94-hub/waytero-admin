@@ -10,7 +10,7 @@ import {
   History, LocalOffer, HeadsetMic, DirectionsRun, AccountBalanceWallet,
   Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
   Receipt, PersonOff, MarkEmailRead, Campaign, AltRoute, Public,
-  Description, ContactSupport, PhoneCallback, RateReview,
+  Description, ContactSupport, PhoneCallback, RateReview, Storefront,
 } from "@mui/icons-material";
 
 export const NAV_ICONS: Record<string, React.ReactNode> = {
@@ -48,4 +48,5 @@ export const NAV_ICONS: Record<string, React.ReactNode> = {
   ContactSupport:     <ContactSupport />,
   PhoneCallback:      <PhoneCallback />,
   RateReview:         <RateReview />,
+  Storefront:         <Storefront />,
 };

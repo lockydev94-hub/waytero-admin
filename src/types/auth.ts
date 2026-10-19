@@ -11,6 +11,16 @@ export type UserRole =
   | "FINANCE_MANAGER"
   | "VERIFICATION_OFFICER";
 
+/** Mirrors backend BranchSummary — the office a staff account answers to. */
+export interface BranchSummary {
+  id: number;
+  name: string;
+  code: string;
+  city_id: number;
+  city_name: string | null;
+  is_headquarters: boolean;
+}
+
 /** Mirrors backend AuthUserResponse */
 export interface AuthUser {
   id: string;
@@ -30,6 +40,14 @@ export interface AuthUser {
   user_code?: string | null;
   last_login_at?: string | null;
   partner_id?: number | null;
+  /**
+   * Which office this account works from. Staff only — a customer, partner or
+   * driver has none. Display only: the server re-reads it from the user row on
+   * every request, so the chip can never disagree with what the queries return.
+   */
+  branch?: BranchSummary | null;
+  /** True only for SUPER_ADMIN: sees every branch and gets the switcher. */
+  is_super?: boolean;
 }
 
 export interface TokenResponse {

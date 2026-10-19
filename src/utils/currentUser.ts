@@ -1,24 +1,16 @@
 // ============================================================
 // WAYTERO ADMIN — CURRENT USER HELPERS
-// The authenticated user is persisted by the Zustand auth store
-// (stores/authStore.ts) under the localStorage key "wt_admin_auth"
-// with shape { state: { user: { user_type, ... } }, version }.
-// Reading localStorage.getItem("user") directly is WRONG — that key
-// does not exist, so user_type comes back undefined. Always go
-// through these helpers.
+// The authenticated user lives in the Zustand auth store
+// (stores/authStore.ts), which persists it under "wt_admin_auth".
+// Reading that key out of localStorage by hand is what these helpers
+// replace: the store is the live value, survives a setUser() from
+// /auth/me, and stays in sync with what the components render.
 // ============================================================
-
-const AUTH_STORAGE_KEY = "wt_admin_auth";
+import { useAuthStore } from "../stores/authStore";
 
 /** Returns the current user's user_type (e.g. "SUPER_ADMIN"), or "" if not logged in. */
 export function currentUserType(): string {
-  try {
-    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return "";
-    return JSON.parse(raw)?.state?.user?.user_type ?? "";
-  } catch {
-    return "";
-  }
+  return useAuthStore.getState().user?.user_type ?? "";
 }
 
 export function isSuperAdmin(): boolean {

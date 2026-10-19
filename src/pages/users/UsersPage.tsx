@@ -37,9 +37,13 @@ import { MediaLibraryItem } from "../../services/media.service";
 import MediaPicker from "../../components/media/MediaPicker";
 import { STAFF_DOC_MAX_BYTES, mediaHint } from "../../utils/mediaLimits";
 import { apiErrorMessage } from "../../utils/apiError";
+import { useAuthStore } from "../../stores/authStore";
+import { useBranches } from "../../hooks/useBranches";
 import { CACHE_TTL } from "../../constants";
 
 // ── Constants ─────────────────────────────────────────────────
+// Every role, for the list's filter. The role *picker* offers fewer: see
+// StaffFormDialog's roleOptions.
 const STAFF_ROLES = ["SUPER_ADMIN", "ADMIN", "CCO", "VERIFICATION_OFFICER", "FINANCE_MANAGER"];
 const GENDER_OPTIONS = ["MALE", "FEMALE", "OTHER", "PREFER_NOT_TO_SAY"];
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
@@ -280,6 +284,16 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
   const qc = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
   const isEdit = !!editStaff;
+  // Who is opening this form decides what it offers: a branch manager hires for
+  // their own office only, and cannot appoint an Admin or move anyone between
+  // offices. The server enforces the same rules; this only stops the form from
+  // offering a choice that would come back as an error.
+  const actor = useAuthStore((s) => s.user);
+  const actorIsSuper = actor?.user_type === "SUPER_ADMIN";
+  const { branches } = useBranches();
+  const [branchId, setBranchId] = useState<number | "">(
+    editStaff?.branch_id ?? actor?.branch?.id ?? "",
+  );
   const [tab, setTab] = useState(0);
   const [saving, setSaving] = useState(false);
   const [generatingCard, setGeneratingCard] = useState(false);
@@ -352,13 +366,20 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
     if (!isEdit && !password) {
       enqueueSnackbar("Password is required for new staff", { variant: "warning" }); setTab(0); return;
     }
+    if (!isEdit && branchId === "") {
+      enqueueSnackbar("Choose the office this person will work from", { variant: "warning" }); setTab(0); return;
+    }
     setSaving(true);
     try {
+      // Sent only when set: on an update the server reads an absent branch_id as
+      // "leave it alone", which is what viewing a master admin's record means.
+      const branchPart = branchId === "" ? {} : { branch_id: Number(branchId) };
       if (isEdit) {
         await staffService.update(editStaff.id, {
           first_name: firstName, last_name: lastName || undefined,
           email, mobile_number: mobile, user_type: userType,
           profile_image_url: photoUrl || undefined, profile: buildProfile(),
+          ...branchPart,
         });
         enqueueSnackbar("Staff member updated", { variant: "success" });
       } else {
@@ -366,13 +387,16 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
           first_name: firstName, last_name: lastName || undefined,
           email, mobile_number: mobile, password, user_type: userType,
           profile_image_url: photoUrl || undefined, profile: buildProfile(),
+          ...branchPart,
         } as StaffUserCreate);
         enqueueSnackbar("Staff member created", { variant: "success" });
       }
       qc.invalidateQueries({ queryKey: ["admin-staff"] });
       onClose();
     } catch (err: any) {
-      enqueueSnackbar(err?.response?.data?.detail ?? "Failed to save", { variant: "error" });
+      // The branch rules answer as a business error ({"message": …}), not as a
+      // FastAPI `detail`, so read both shapes or a refusal shows as "Failed to save".
+      enqueueSnackbar(apiErrorMessage(err, "Failed to save"), { variant: "error" });
     } finally { setSaving(false); }
   };
 
@@ -396,6 +420,16 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
     } catch { enqueueSnackbar("Failed to reset password", { variant: "error" }); }
   };
 
+  // SUPER_ADMIN is not a hireable role — the server refuses it, and a master
+  // account is not something handed out from a form. ADMIN is the head of an
+  // office, so only a super admin may appoint one. The role the record already
+  // carries stays listed, so opening someone's file cannot rewrite it by
+  // accident.
+  const roleOptions = Array.from(new Set([
+    ...STAFF_ROLES.filter((r) => r !== "SUPER_ADMIN" && (actorIsSuper || r !== "ADMIN")),
+    ...(editStaff ? [editStaff.user_type] : []),
+  ]));
+
   const TABS = [
     { icon: <Person />, label: "Basic Info" }, { icon: <PeopleAlt />, label: "Personal" },
     { icon: <Work />, label: "Employment" }, { icon: <Home />, label: "Address" },
@@ -409,6 +443,8 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
     id: "", user_code: null, first_name: firstName || "Staff",
     last_name: lastName || "Member", mobile_number: mobile,
     email, user_type: userType, status: "ACTIVE", is_active: true,
+    branch_id: branchId === "" ? null : Number(branchId),
+    branch_name: branches.find((b) => b.id === Number(branchId))?.name ?? null,
     profile_image_url: photoUrl || null, created_at: new Date().toISOString(),
     last_login_at: null,
     profile: {
@@ -456,7 +492,7 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
             <Grid item xs={12} sm={6}><TextField {...F} label="Mobile Number *" value={mobile} onChange={e => setMobile(e.target.value)} /></Grid>
             <Grid item xs={12} sm={!isEdit ? 6 : 12}>
               <TextField {...F} select label="Role *" value={userType} onChange={e => setUserType(e.target.value)}>
-                {STAFF_ROLES.map(r => (
+                {roleOptions.map(r => (
                   <MenuItem key={r} value={r}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: ROLE_META[r]?.color }} />
@@ -467,6 +503,25 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
               </TextField>
             </Grid>
             {!isEdit && <Grid item xs={12} sm={6}><TextField {...F} label="Password *" type="password" value={password} onChange={e => setPassword(e.target.value)} /></Grid>}
+            <Grid item xs={12} sm={6}>
+              {actorIsSuper ? (
+                <TextField
+                  {...F} select label="Office" value={branchId}
+                  onChange={e => setBranchId(e.target.value === "" ? "" : Number(e.target.value))}
+                >
+                  {branches.filter(b => b.is_active).map(b => (
+                    <MenuItem key={b.id} value={b.id}>{b.name}{b.is_headquarters ? " · HQ" : ""}</MenuItem>
+                  ))}
+                </TextField>
+              ) : (
+                <TextField {...F} label="Office" value={actor?.branch?.name ?? "—"} disabled />
+              )}
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                {actorIsSuper
+                  ? "Whose queues this person sees. A master admin has none. Moving someone changes it on their very next request — the server never trusts the branch in their token."
+                  : `Your own office — a branch manager hires for ${actor?.branch?.name ?? "their own branch"} and cannot move anyone out of it.`}
+              </Typography>
+            </Grid>
             <Grid item xs={12}>
               <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, display: "flex", alignItems: "center", gap: 2 }}>
                 <Avatar src={photoUrl || undefined} sx={{ width: 72, height: 72, border: "2px solid", borderColor: "divider" }}>
@@ -521,7 +576,7 @@ function StaffModal({ open, onClose, editStaff, platformName, platformLogo }: {
           <Grid container spacing={2}>
             <Grid item xs={12}><TextField {...F} label="Address Line 1" value={addr1} onChange={e => setAddr1(e.target.value)} /></Grid>
             <Grid item xs={12}><TextField {...F} label="Address Line 2" value={addr2} onChange={e => setAddr2(e.target.value)} /></Grid>
-            <Grid item xs={12} sm={6}><TextField {...F} label="City" value={city} onChange={e => setCity(e.target.value)} /></Grid>
+            <Grid item xs={12} sm={6}><TextField {...F} label="City (postal)" value={city} onChange={e => setCity(e.target.value)} helperText="Where they live. It does not decide which office they work for — that is the Office field in Basic Info." /></Grid>
             <Grid item xs={12} sm={6}><TextField {...F} label="State" value={stateName} onChange={e => setStateName(e.target.value)} /></Grid>
             <Grid item xs={12} sm={6}><TextField {...F} label="Pincode" value={pincode} onChange={e => setPincode(e.target.value)} /></Grid>
             <Grid item xs={12} sm={6}><TextField {...F} label="Country" value={country} onChange={e => setCountry(e.target.value)} /></Grid>
@@ -935,6 +990,14 @@ export default function UsersPage() {
       field: "user_type", headerName: "Role", width: 170,
       renderCell: (p: GridRenderCellParams<StaffUser>) => (
         <Chip label={ROLE_META[p.value]?.label ?? p.value} size="small" sx={{ bgcolor: alpha(ROLE_META[p.value]?.color ?? "#64748B", 0.12), color: ROLE_META[p.value]?.color ?? "#64748B", fontWeight: 700, fontSize: 11 }} />
+      ),
+    },
+    {
+      field: "branch_name", headerName: "Office", width: 150, sortable: false,
+      renderCell: (p: GridRenderCellParams<StaffUser>) => (
+        <Typography variant="body2" color={p.row.user_type === "SUPER_ADMIN" ? "text.secondary" : "text.primary"}>
+          {p.row.user_type === "SUPER_ADMIN" ? "All offices" : p.value ?? "—"}
+        </Typography>
       ),
     },
     {
