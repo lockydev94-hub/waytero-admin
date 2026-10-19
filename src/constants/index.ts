@@ -29,10 +29,31 @@ export const TOKEN_KEYS = {
 // Sidebar nav items — Doc: Admin Portal §7-8
 // Grouped into logical sections; NAV_ITEMS remains a flat projection so
 // existing lookups (page-title in AdminLayout) keep working.
+//
+// Order rule: within a section an item sits where its CLOCK demands, not
+// where it was invented. Operations runs from "a customer is waiting right
+// now" down to "this can wait until the end of the day".
 export type NavRole = "SUPER_ADMIN" | "ADMIN" | "CCO" | "FINANCE_MANAGER" | "VERIFICATION_OFFICER";
 
+export const NAV_KEYS = [
+  "dashboard",
+  "bookings", "cab-ops", "trip-assistance", "hotel-switches", "customer-care",
+  "chat", "callback-requests", "contact-messages", "enquiries",
+  "partner-applications", "guest-feedback",
+  "partners", "drivers", "vehicles", "onboarding-docs", "vehicles-maintenance",
+  "hotels", "hotels-commission-audit", "tours", "cab-routes",
+  "payments", "wallets", "settlements", "handover-reconciliation", "coupons",
+  "tax-gst", "reports",
+  "cancellation-requests", "cancellation-policy", "account-deletion",
+  "notices", "email-logs",
+  "cms", "offers", "blog", "landing-pages", "website-pages",
+  "users", "work-hours", "audit", "settings",
+] as const;
+
+export type NavKey = typeof NAV_KEYS[number];
+
 export interface NavItem {
-  key: string;
+  key: NavKey;
   label: string;
   icon: string;
   path: string;
@@ -55,14 +76,21 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Everything here is a queue someone is waiting on, fastest clock first.
     key: "operations",
     title: "Operations",
     items: [
       { key: "bookings", label: "Bookings", icon: "ConfirmationNumber", path: "/bookings", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "booking cab hotel tour order trip" },
-      { key: "hotel-switches", label: "Hotel Switches", icon: "SwapHoriz", path: "/bookings/switches", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "switch transfer hotel move" },
       { key: "cab-ops", label: "Cab Operations", icon: "DirectionsCar", path: "/cab-ops", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "cab breakdown swap handover taxi driver assign" },
-      { key: "trip-assistance", label: "Trip Assistance", icon: "DirectionsRun", path: "/trip-assistance", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "trip help emergency assist" },
+      { key: "trip-assistance", label: "Trip Assistance", icon: "DirectionsRun", path: "/trip-assistance", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "trip help emergency assist sos" },
+      { key: "hotel-switches", label: "Hotel Switches", icon: "SwapHoriz", path: "/bookings/switches", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "switch transfer hotel move" },
       { key: "customer-care", label: "Customer Care", icon: "HeadsetMic", path: "/customer-care", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "customer support help care issue log" },
+      { key: "chat", label: "Live Chat", icon: "Forum", path: "/chat", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "chat live message support" },
+      { key: "callback-requests", label: "Callback Requests", icon: "PhoneCallback", path: "/leads/callback-requests", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "callback request call me mobile phone lead" },
+      { key: "contact-messages", label: "Contact Messages", icon: "Email", path: "/leads/contact-messages", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "contact message enquiry lead" },
+      { key: "enquiries", label: "Website Enquiries", icon: "ContactSupport", path: "/leads/enquiries", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "enquiry lead quote quotation callback rail website" },
+      { key: "partner-applications", label: "Partner Applications", icon: "Handshake", path: "/leads/partner-applications", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "partner apply application lead" },
+      { key: "guest-feedback", label: "Guest Feedback", icon: "RateReview", path: "/leads/feedback", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "feedback review rating guest booking moderation" },
     ],
   },
   {
@@ -94,6 +122,7 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Policy-gated and worked in batches, so not part of the act-now queue.
     key: "customer-resolution",
     title: "Customer Resolution",
     items: [
@@ -103,17 +132,12 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Tools that send or inspect, rather than queues that wait.
     key: "communication",
     title: "Communication",
     items: [
-      { key: "chat", label: "Live Chat", icon: "Forum", path: "/chat", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "chat live message support" },
       { key: "notices", label: "Partner Notices", icon: "Campaign", path: "/notices", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "notice announcement partner broadcast" },
       { key: "email-logs", label: "Email Logs", icon: "MarkEmailRead", path: "/email/logs", roles: ["SUPER_ADMIN","ADMIN"], keywords: "email log mail sent" },
-      { key: "partner-applications", label: "Partner Applications", icon: "Handshake", path: "/leads/partner-applications", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "partner apply application lead" },
-      { key: "contact-messages", label: "Contact Messages", icon: "Email", path: "/leads/contact-messages", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "contact message enquiry lead" },
-      { key: "enquiries", label: "Website Enquiries", icon: "ContactSupport", path: "/leads/enquiries", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "enquiry lead quote quotation callback rail website" },
-      { key: "callback-requests", label: "Callback Requests", icon: "PhoneCallback", path: "/leads/callback-requests", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "callback request call me mobile phone lead" },
-      { key: "guest-feedback", label: "Guest Feedback", icon: "RateReview", path: "/leads/feedback", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "feedback review rating guest booking moderation" },
     ],
   },
   {
@@ -132,15 +156,62 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "System",
     items: [
       { key: "users", label: "Users", icon: "ManageAccounts", path: "/users", roles: ["SUPER_ADMIN"], keywords: "user admin staff employee" },
+      { key: "work-hours", label: "Work Hours", icon: "History", path: "/work-hours", roles: ["SUPER_ADMIN"], keywords: "attendance leave staff hours login time presence" },
       { key: "audit", label: "Audit Logs", icon: "History", path: "/audit", roles: ["SUPER_ADMIN","ADMIN"], keywords: "audit log activity trail" },
-      { key: "settings", label: "Settings", icon: "Settings", path: "/settings", roles: ["SUPER_ADMIN"], keywords: "settings configuration system" },
+      { key: "settings", label: "Settings", icon: "Settings", path: "/settings", roles: ["SUPER_ADMIN"], keywords: "settings configuration system idle lock logout mpin" },
     ],
   },
 ];
 
 export const NAV_ITEMS: NavItem[] = NAV_SECTIONS.flatMap((s) => s.items);
 
-export type NavKey = typeof NAV_ITEMS[number]["key"];
+// Detail routes are not in the sidebar, so a prefix match cannot name them.
+// Checked BEFORE the nav match: "/cms/pages/privacy" starts with the nav path
+// "/cms/pages" but is an editor, not the list.
+const TITLE_BY_PATH: Array<[RegExp, string]> = [
+  [/^\/bookings\/(?!switches$)[^/]+$/,                    "Booking Detail"],
+  [/^\/bookings\/[^/]+\/cab\/[^/]+$/,                     "Cab Booking Detail"],
+  [/^\/bookings\/[^/]+\/hotel\/[^/]+$/,                   "Hotel Booking Detail"],
+  [/^\/bookings\/[^/]+\/tour\/[^/]+$/,                    "Tour Booking Detail"],
+  [/^\/cms\/sections\/[^/]+$/,                            "Section Editor"],
+  [/^\/cms\/blog\/new$/,                                  "New Blog Post"],
+  [/^\/cms\/blog\/[^/]+$/,                                "Blog Editor"],
+  [/^\/cms\/landing-pages\/new$/,                         "New Landing Page"],
+  [/^\/cms\/landing-pages\/[^/]+$/,                       "Landing Page Editor"],
+  [/^\/cms\/pages\/[^/]+$/,                               "Page Editor"],
+  [/^\/tours\/[^/]+$/,                                    "Tour Detail"],
+  [/^\/customer-care\/cab-booking\/[^/]+$/,               "Customer Cab Bookings"],
+  [/^\/customer-care\/hotel-booking\/[^/]+$/,             "Customer Hotel Bookings"],
+  [/^\/customer-care\/tour-booking\/[^/]+$/,              "Customer Tour Bookings"],
+  [/^\/settlements\/coupon-disbursements$/,               "Coupon Disbursements"],
+  [/^\/profile$/,                                         "Profile"],
+  [/^\/unauthorized$/,                                    "Not Authorised"],
+];
+
+/**
+ * The one nav item a pathname belongs to: the longest matching path wins,
+ * so "/bookings/switches" is Hotel Switches and not also Bookings.
+ */
+export function findActiveNavItem(pathname: string): NavItem | null {
+  let best: NavItem | null = null;
+  for (const n of NAV_ITEMS) {
+    if (pathname !== n.path && !pathname.startsWith(`${n.path}/`)) continue;
+    if (!best || n.path.length > best.path.length) best = n;
+  }
+  return best;
+}
+
+/**
+ * The page title for the topbar. Detail routes are matched first because
+ * "/cms/pages/privacy" starts with the nav path "/cms/pages" but is an
+ * editor, not the list.
+ */
+export function resolveNavTitle(pathname: string): string {
+  for (const [pattern, title] of TITLE_BY_PATH) {
+    if (pattern.test(pathname)) return title;
+  }
+  return findActiveNavItem(pathname)?.label ?? "WayTero Admin";
+}
 
 // ── Audit log filter vocabularies ─────────────────────────────────────────────
 // Doc Ref: Docs/04_API_Documentation/12_ADMIN_API.md §28 (Audit Events)

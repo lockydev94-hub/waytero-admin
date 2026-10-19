@@ -10,6 +10,7 @@ import { RouteGuard } from "./RouteGuard";
 import { AdminLayout } from "../layouts/AdminLayout";
 
 const LoginPage                = lazy(() => import("../pages/auth/LoginPage"));
+const UnauthorizedPage         = lazy(() => import("../pages/auth/UnauthorizedPage"));
 const DashboardPage            = lazy(() => import("../pages/dashboard/DashboardPage"));
 const BookingsPage             = lazy(() => import("../pages/bookings/BookingsPage"));
 const BookingMasterDetailPage  = lazy(() => import("../pages/bookings/BookingMasterDetailPage"));
@@ -85,6 +86,10 @@ export function AppRoutes() {
         <Route element={<RouteGuard />}>
           <Route element={<AdminLayout />}>
             <Route path="/dashboard"   element={<DashboardPage />} />
+
+            {/* Role mismatch lands here — RouteGuard navigates to /unauthorized,
+                so the route must exist or the catch-all bounces in a loop. */}
+            <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
             {/* Bookings — list, master detail, cab detail */}
             <Route path="/bookings"                             element={<BookingsPage />} />

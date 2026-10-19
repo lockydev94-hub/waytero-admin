@@ -1,74 +1,28 @@
 // ============================================================
 // WAYTERO ADMIN — ADMIN LAYOUT
 // Doc: Admin Portal §5 Layout — Sidebar + Header + Content
-// Sidebar: 260px, collapsible. Header: sticky, 64px.
+// Sidebar: 260px, collapsible. Header: sticky, 64px (see Topbar.tsx).
 // ============================================================
-import { useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
-  Box, Drawer, AppBar, Toolbar, Typography, IconButton,
+  Box, Drawer, Typography, IconButton,
   List, ListItem, ListItemButton, ListItemIcon, ListItemText,
-  Avatar, Tooltip, Badge, Divider, useMediaQuery, useTheme,
-  Menu, MenuItem, ListSubheader,
+  Avatar, Tooltip, Divider, useMediaQuery, useTheme,
+  ListSubheader,
 } from "@mui/material";
-import {
-  Menu as MenuIcon,
-  Dashboard, ConfirmationNumber, Handshake, Person, DirectionsCar,
-  Hotel, Tour,   AccountBalance, BarChart, ManageAccounts, Settings,
-  History, Notifications, ChevronLeft, Logout, LightMode, DarkMode, LocalOffer, HeadsetMic, DirectionsRun,
-  AccountBalanceWallet, Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
-  Receipt, PersonOff, MarkEmailRead, Campaign,
-  Description, Public, AltRoute, ContactSupport, PhoneCallback, RateReview,
-} from "@mui/icons-material";
+import { Logout } from "@mui/icons-material";
 import { useAuthStore } from "../stores/authStore";
 import { useUiStore }   from "../stores/uiStore";
 import { authService }  from "../services/auth.service";
-import { NAV_ITEMS, NAV_SECTIONS } from "../constants";
+import { NAV_SECTIONS, findActiveNavItem } from "../constants";
+import { NAV_ICONS }    from "../constants/icons";
 import { useGstEnabled } from "../hooks/useGstEnabled";
-import { GlobalSearch } from "../components/search/GlobalSearch";
-import NotificationsDropdown from "../components/notifications/NotificationsDropdown";
+import { Topbar } from "../components/layout/Topbar";
 import NewChatModal from "../components/chat/NewChatModal";
 import BookingAcceptModal from "../components/bookings/BookingAcceptModal";
 import { useAdminPresence } from "../hooks/useAdminPresence";
 
 const DRAWER_WIDTH = 260;
-
-const ICON_MAP: Record<string, React.ReactNode> = {
-  Dashboard:       <Dashboard />,
-  ConfirmationNumber: <ConfirmationNumber />,
-  Handshake:       <Handshake />,
-  Person:          <Person />,
-  DirectionsCar:   <DirectionsCar />,
-  Hotel:           <Hotel />,
-  Tour:            <Tour />,
-  AccountBalance:  <AccountBalance />,
-  BarChart:        <BarChart />,
-  ManageAccounts:  <ManageAccounts />,
-  Settings:        <Settings />,
-  History:         <History />,
-  LocalOffer:      <LocalOffer />,
-  HeadsetMic:      <HeadsetMic />,
-  DirectionsRun:   <DirectionsRun />,
-  AccountBalanceWallet: <AccountBalanceWallet />,
-  Build:           <Build />,
-  SwapHoriz:       <SwapHoriz />,
-  Cancel:          <Cancel />,
-  Gavel:           <Gavel />,
-  Web:             <Web />,
-  Article:         <Article />,
-  Email:           <Email />,
-  Forum:           <Forum />,
-  Receipt:         <Receipt />,
-  PersonOff:       <PersonOff />,
-  MarkEmailRead:   <MarkEmailRead />,
-  Campaign:        <Campaign />,
-  Description:     <Description />,
-  Public:          <Public />,
-  AltRoute:        <AltRoute />,
-  ContactSupport:  <ContactSupport />,
-  PhoneCallback:   <PhoneCallback />,
-  RateReview:      <RateReview />,
-};
 
 export function AdminLayout() {
   const theme    = useTheme();
@@ -77,10 +31,8 @@ export function AdminLayout() {
   const location  = useLocation();
 
   const { user, clearAuth, refreshToken } = useAuthStore();
-  const { sidebarOpen, toggleSidebar, setSidebar, themeMode, toggleTheme } = useUiStore();
+  const { sidebarOpen, toggleSidebar, setSidebar } = useUiStore();
   const { isGstEnabled } = useGstEnabled();
-
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   // Presence heartbeat — while this portal tab is open the admin counts
   // as online support, so customer chats can route here (smart routing).
@@ -106,6 +58,10 @@ export function AdminLayout() {
     clearAuth();
     navigate("/login", { replace: true });
   }
+
+  // Exactly one row is highlighted: the longest matching nav path, so
+  // /bookings/switches does not also light up Bookings.
+  const activeNavKey = findActiveNavItem(location.pathname)?.key ?? null;
 
   const sidebar = (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -146,7 +102,7 @@ export function AdminLayout() {
               {section.title}
             </ListSubheader>
             {section.items.map((item) => {
-              const active = location.pathname.startsWith(item.path);
+              const active = item.key === activeNavKey;
               return (
                 <ListItem key={item.key} disablePadding sx={{ mb: 0.5 }}>
                   <ListItemButton
@@ -163,7 +119,7 @@ export function AdminLayout() {
                     }}
                   >
                     <ListItemIcon sx={{ minWidth: 36, color: active ? "#fff" : "text.secondary" }}>
-                      {ICON_MAP[item.icon]}
+                      {NAV_ICONS[item.icon]}
                     </ListItemIcon>
                     <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14, fontWeight: active ? 600 : 400 }} />
                   </ListItemButton>
@@ -214,45 +170,11 @@ export function AdminLayout() {
 
       {/* Main area */}
       <Box sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        {/* AppBar */}
-        <AppBar position="sticky" elevation={0}>
-          <Toolbar sx={{ gap: 1 }}>
-            <IconButton edge="start" onClick={toggleSidebar} size="small" sx={{ mr: 1 }}>
-              {drawerOpen ? <ChevronLeft /> : <MenuIcon />}
-            </IconButton>
-
-            {/* Page title from pathname */}
-            <Typography variant="h6" fontWeight={600} sx={{ display: { xs: "none", md: "block" }, mr: 1 }}>
-              {NAV_ITEMS.find((n) => location.pathname.startsWith(n.path))?.label ?? "WayTero Admin"}
-            </Typography>
-
-            {/* Global page search — type to jump to any page */}
-            <GlobalSearch />
-
-            <Tooltip title={themeMode === "light" ? "Dark mode" : "Light mode"}>
-              <IconButton onClick={toggleTheme} size="small">
-                {themeMode === "light" ? <DarkMode fontSize="small" /> : <LightMode fontSize="small" />}
-              </IconButton>
-            </Tooltip>
-
-            {/* Notifications bell (Doc Ref: BRD Part 7 §155) */}
-            <NotificationsDropdown />
-
-            <Tooltip title="Account">
-              <IconButton size="small" onClick={(e) => setAnchorEl(e.currentTarget)}>
-                <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13, fontWeight: 700 }}>
-                  {user?.full_name?.[0] ?? user?.mobile?.[0] ?? 'A'}
-                </Avatar>
-              </IconButton>
-            </Tooltip>
-
-            <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
-              <MenuItem onClick={() => { setAnchorEl(null); handleLogout(); }}>
-                <Logout fontSize="small" sx={{ mr: 1 }} /> Logout
-              </MenuItem>
-            </Menu>
-          </Toolbar>
-        </AppBar>
+        <Topbar
+          sidebarOpen={drawerOpen}
+          onToggleSidebar={toggleSidebar}
+          onLogout={handleLogout}
+        />
 
         {/* Page content */}
         <Box component="main" sx={{ flex: 1, p: { xs: 2, md: 3 } }}>

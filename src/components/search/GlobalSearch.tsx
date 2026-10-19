@@ -16,33 +16,11 @@ import {
   Tooltip,
   useTheme,
 } from "@mui/material";
-import {
-  Search,
-  Dashboard, ConfirmationNumber, Handshake, Person, DirectionsCar,
-  Hotel, Tour, AccountBalance, BarChart, ManageAccounts, Settings,
-  History, LocalOffer, HeadsetMic, DirectionsRun, AccountBalanceWallet,
-  Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
-  Receipt, PersonOff, MarkEmailRead, Campaign, AltRoute,
-  ContactSupport, PhoneCallback, RateReview,
-} from "@mui/icons-material";
+import { Search } from "@mui/icons-material";
 import { NAV_SECTIONS, NAV_ITEMS } from "../../constants";
+import { NAV_ICONS } from "../../constants/icons";
 import { useAuthStore } from "../../stores/authStore";
 import { useGstEnabled } from "../../hooks/useGstEnabled";
-
-const ICON_MAP: Record<string, React.ReactNode> = {
-  Dashboard: <Dashboard />, ConfirmationNumber: <ConfirmationNumber />,
-  Handshake: <Handshake />, Person: <Person />, DirectionsCar: <DirectionsCar />,
-  Hotel: <Hotel />, Tour: <Tour />, AccountBalance: <AccountBalance />,
-  BarChart: <BarChart />, ManageAccounts: <ManageAccounts />, Settings: <Settings />,
-  History: <History />, LocalOffer: <LocalOffer />, HeadsetMic: <HeadsetMic />,
-  DirectionsRun: <DirectionsRun />, AccountBalanceWallet: <AccountBalanceWallet />,
-  Build: <Build />, SwapHoriz: <SwapHoriz />, Cancel: <Cancel />, Gavel: <Gavel />,
-  Web: <Web />, Article: <Article />, Email: <Email />, Forum: <Forum />,
-  Receipt: <Receipt />, PersonOff: <PersonOff />, MarkEmailRead: <MarkEmailRead />,
-  Campaign: <Campaign />, AltRoute: <AltRoute />,
-  ContactSupport: <ContactSupport />, PhoneCallback: <PhoneCallback />,
-  RateReview: <RateReview />,
-};
 
 interface SearchOption {
   key: string;
@@ -129,7 +107,7 @@ export function GlobalSearch() {
         renderOption={(props, option) => (
           <li {...props} key={option.key}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 1, minWidth: 0, width: "100%" }}>
-              <Box sx={{ color: "text.secondary", display: "flex", fontSize: 20 }}>{ICON_MAP[option.icon]}</Box>
+              <Box sx={{ color: "text.secondary", display: "flex", fontSize: 20 }}>{NAV_ICONS[option.icon]}</Box>
               <Typography variant="body2" sx={{ flex: 1 }}>{option.label}</Typography>
               <Chip label={option.section} size="small" sx={{ height: 20, fontSize: 11 }} />
             </Box>
@@ -144,7 +122,7 @@ export function GlobalSearch() {
           <TextField
             {...params}
             inputRef={inputRef}
-            placeholder="Search pages…  (Ctrl+K)"
+            placeholder="Search pages…"
             variant="outlined"
             fullWidth
             InputProps={{
