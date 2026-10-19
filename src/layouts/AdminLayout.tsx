@@ -6,7 +6,7 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   Box, Drawer, Typography, IconButton,
-  List, ListItem, ListItemButton, ListItemIcon, ListItemText,
+  Badge, List, ListItem, ListItemButton, ListItemIcon, ListItemText,
   Avatar, Tooltip, Divider, useMediaQuery, useTheme,
   ListSubheader,
 } from "@mui/material";
@@ -17,6 +17,7 @@ import { authService }  from "../services/auth.service";
 import { NAV_SECTIONS, findActiveNavItem } from "../constants";
 import { NAV_ICONS }    from "../constants/icons";
 import { useGstEnabled } from "../hooks/useGstEnabled";
+import { useActionCounts } from "../hooks/useActionCounts";
 import { useLockStore } from "../stores/lockStore";
 import { Topbar } from "../components/layout/Topbar";
 import LockScreen from "../components/layout/LockScreen";
@@ -36,6 +37,7 @@ export function AdminLayout() {
   const { sidebarOpen, toggleSidebar, setSidebar } = useUiStore();
   const { isGstEnabled } = useGstEnabled();
   const isLocked = useLockStore((s) => s.isLocked);
+  const actionCounts = useActionCounts();
 
   // Presence heartbeat — while this portal tab is open the admin counts
   // as online support, so customer chats can route here (smart routing).
@@ -111,6 +113,7 @@ export function AdminLayout() {
             </ListSubheader>
             {section.items.map((item) => {
               const active = item.key === activeNavKey;
+              const pending = actionCounts[item.key] ?? 0;
               return (
                 <ListItem key={item.key} disablePadding sx={{ mb: 0.5 }}>
                   <ListItemButton
@@ -130,6 +133,26 @@ export function AdminLayout() {
                       {NAV_ICONS[item.icon]}
                     </ListItemIcon>
                     <ListItemText primary={item.label} primaryTypographyProps={{ fontSize: 14, fontWeight: active ? 600 : 400 }} />
+                    {/* Zero hides: an empty circle would read as a broken badge. */}
+                    {pending > 0 && (
+                      <Badge
+                        badgeContent={pending}
+                        max={99}
+                        color={active ? "default" : "error"}
+                        sx={{
+                          "& .MuiBadge-badge": {
+                            position: "static",
+                            transform: "none",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            bgcolor: active ? "rgba(255,255,255,0.24)" : "error.main",
+                            color: "#fff",
+                          },
+                        }}
+                      >
+                        <Box sx={{ width: 8, height: 8 }} />
+                      </Badge>
+                    )}
                   </ListItemButton>
                 </ListItem>
               );
