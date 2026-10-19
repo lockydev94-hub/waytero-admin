@@ -23,6 +23,13 @@ export interface AuthUser {
   permissions: string[];
   is_mobile_verified: boolean;
   is_email_verified: boolean;
+  must_change_password?: boolean;
+  /** Staff with no unlock PIN: idle can only log them out, so the profile nudges. */
+  must_set_mpin?: boolean;
+  /** The admin's own account code — shown on their own profile. */
+  user_code?: string | null;
+  last_login_at?: string | null;
+  partner_id?: number | null;
 }
 
 export interface TokenResponse {
@@ -81,6 +88,9 @@ export interface AdminOTPLoginPayload {
 /** Mirrors backend SessionConfigResponse — GET /auth/admin/session-config */
 export interface SessionConfig {
   has_mpin: boolean;
+  /** false = the account signs in with an OTP, so installing a PIN proves the
+      mobile instead of asking for a password that does not exist */
+  has_password: boolean;
   /** effective idle window (the admin's own value, or the platform default) */
   idle_minutes: number;
   /** the admin's own setting; null = inherits idle_default_minutes */

@@ -140,14 +140,22 @@ export function AdminLayout() {
 
       <Divider />
 
-      {/* User footer */}
+      {/* User footer — the account itself lives at /profile */}
       <Box sx={{ p: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
-        <Avatar sx={{ width: 36, height: 36, bgcolor: "primary.main", fontSize: 14, fontWeight: 700 }}>
-          {user?.full_name?.[0] ?? user?.mobile?.[0] ?? 'A'}
-        </Avatar>
-        <Box flex={1} minWidth={0}>
-          <Typography variant="body2" fontWeight={600} noWrap>{user?.full_name ?? user?.mobile}</Typography>
-          <Typography variant="caption" color="text.secondary" noWrap>{user?.user_type?.replace(/_/g, " ")}</Typography>
+        <Box
+          role="button"
+          tabIndex={0}
+          onClick={() => { navigate("/profile"); if (isMobile) setSidebar(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") navigate("/profile"); }}
+          sx={{ display: "flex", alignItems: "center", gap: 1.5, flex: 1, minWidth: 0, cursor: "pointer", borderRadius: 2, "&:hover": { bgcolor: "action.hover" } }}
+        >
+          <Avatar sx={{ width: 36, height: 36, bgcolor: "primary.main", fontSize: 14, fontWeight: 700 }}>
+            {user?.full_name?.[0] ?? user?.mobile?.[0] ?? 'A'}
+          </Avatar>
+          <Box flex={1} minWidth={0}>
+            <Typography variant="body2" fontWeight={600} noWrap>{user?.full_name ?? user?.mobile}</Typography>
+            <Typography variant="caption" color="text.secondary" noWrap>{user?.user_type?.replace(/_/g, " ")}</Typography>
+          </Box>
         </Box>
         <Tooltip title="Logout">
           <IconButton size="small" onClick={handleLogout}><Logout fontSize="small" /></IconButton>

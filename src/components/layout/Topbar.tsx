@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import {
   Menu as MenuIcon, ChevronLeft, LightMode, DarkMode, Logout, Lock as LockIcon,
+  Person, Schedule, Groups,
 } from "@mui/icons-material";
 import { useAuthStore } from "../../stores/authStore";
 import { useUiStore } from "../../stores/uiStore";
@@ -115,6 +116,20 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
           </Box>
 
           <Divider />
+
+          <MenuItem onClick={() => { closeMenu(); navigate("/profile"); }}>
+            <Person fontSize="small" sx={{ mr: 1.5 }} /> Profile
+          </MenuItem>
+
+          <MenuItem onClick={() => { closeMenu(); navigate("/profile?tab=hours"); }}>
+            <Schedule fontSize="small" sx={{ mr: 1.5 }} /> My working hours
+          </MenuItem>
+
+          {user?.user_type === "SUPER_ADMIN" && (
+            <MenuItem onClick={() => { closeMenu(); navigate("/work-hours"); }}>
+              <Groups fontSize="small" sx={{ mr: 1.5 }} /> Staff working hours
+            </MenuItem>
+          )}
 
           {hasMpin && (
             <MenuItem onClick={lockNow}>

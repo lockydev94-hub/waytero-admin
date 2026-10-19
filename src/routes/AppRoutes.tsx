@@ -65,6 +65,8 @@ const AccountDeletionPage       = lazy(() => import("../pages/accountDeletion/Ac
 const EmailLogsPage             = lazy(() => import("../pages/email/EmailLogsPage"));
 const NoticesPage               = lazy(() => import("../pages/notices/NoticesPage"));
 const OnboardingDocsPage        = lazy(() => import("../pages/onboarding-docs/OnboardingDocsPage"));
+const ProfilePage               = lazy(() => import("../pages/profile/ProfilePage"));
+const WorkHoursPage             = lazy(() => import("../pages/work-hours/WorkHoursPage"));
 
 function PageLoader() {
   return (
@@ -169,6 +171,10 @@ export function AppRoutes() {
             <Route path="/email/logs"                  element={<EmailLogsPage />} />
             <Route path="/notices"                      element={<NoticesPage />} />
             <Route path="/onboarding-docs"             element={<OnboardingDocsPage />} />
+
+            {/* The signed-in admin's own account, and the attendance report */}
+            <Route path="/profile"                      element={<ProfilePage />} />
+            <Route path="/work-hours"                   element={<WorkHoursPage />} />
           </Route>
         </Route>
 
