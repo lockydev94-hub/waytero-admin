@@ -414,6 +414,8 @@ export const bookingService = {
     page?: number; page_size?: number; booking_status?: string;
     payment_status?: string; service_type?: string; city_id?: number;
     search?: string; journey_date?: string;
+    sort_by?: "created_at" | "journey_start_date" | "total_amount";
+    sort_dir?: "asc" | "desc";
   }) => apiClient.get<PaginatedBookings>(base, { params }).then(r => r.data),
 
   stats: () => apiClient.get<BookingStats>(`${base}/stats`).then(r => r.data),

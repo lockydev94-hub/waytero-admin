@@ -9,7 +9,7 @@
 //  works the list top-down instead of opening every editor to look.
 // ============================================================
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Box,
@@ -45,6 +45,7 @@ import {
   Place as PlaceIcon,
   Public,
   Search,
+  SearchOff,
 } from "@mui/icons-material";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -89,10 +90,34 @@ export default function LandingPagesListPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState("");
+  const [cityFilter, setCityFilter] = useState("");
   const [blockers, setBlockers] = useState<{ id: number; problems: string[] } | null>(null);
 
+  const { data: specs } = useQuery({
+    queryKey: ["landing-page-specs"],
+    queryFn: () => landingPagesService.getSpecs(),
+    staleTime: 300_000,
+  });
+  const stateOptions = specs?.options?.states ?? [];
+  const cityOptions = useMemo(() => {
+    const cities = specs?.options?.cities ?? [];
+    return stateFilter
+      ? cities.filter((c) => String(c.state_id) === stateFilter)
+      : cities;
+  }, [specs, stateFilter]);
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["landing-pages", page, rowsPerPage, search, typeFilter, statusFilter],
+    queryKey: [
+      "landing-pages",
+      page,
+      rowsPerPage,
+      search,
+      typeFilter,
+      statusFilter,
+      stateFilter,
+      cityFilter,
+    ],
     queryFn: () =>
       landingPagesService.listPages({
         page: page + 1,
@@ -100,6 +125,8 @@ export default function LandingPagesListPage() {
         search: search || undefined,
         page_type: typeFilter || undefined,
         status: statusFilter,
+        state_id: stateFilter ? Number(stateFilter) : undefined,
+        city_id: cityFilter ? Number(cityFilter) : undefined,
       }),
     placeholderData: keepPreviousData,
   });
@@ -160,7 +187,18 @@ export default function LandingPagesListPage() {
   const openInWebsite = (slug: string) =>
     window.open(`${SITE_URL}/${slug}`, "_blank", "noopener,noreferrer");
 
-  const hasFilters = !!(search || typeFilter || statusFilter !== "all");
+  const hasFilters = !!(
+    search || typeFilter || statusFilter !== "all" || stateFilter || cityFilter
+  );
+
+  const clearFilters = () => {
+    setSearch("");
+    setTypeFilter("");
+    setStatusFilter("all");
+    setStateFilter("");
+    setCityFilter("");
+    setPage(0);
+  };
 
   return (
     <Box>
@@ -249,7 +287,7 @@ export default function LandingPagesListPage() {
               ))}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ minWidth: { xs: "100%", sm: 140 } }}>
+          <FormControl size="small" sx={FIELD_SX}>
             <Select
               value={statusFilter}
               aria-label="Publish status"
@@ -263,16 +301,47 @@ export default function LandingPagesListPage() {
               <MenuItem value="draft">Draft</MenuItem>
             </Select>
           </FormControl>
-          {hasFilters && (
-            <Button
-              size="small"
-              onClick={() => {
-                setSearch("");
-                setTypeFilter("");
-                setStatusFilter("all");
+          <FormControl size="small" sx={FIELD_SX}>
+            <Select
+              value={stateFilter}
+              displayEmpty
+              aria-label="State"
+              onChange={(e) => {
+                setStateFilter(e.target.value as string);
+                setCityFilter("");
                 setPage(0);
               }}
+              renderValue={(v) =>
+                v ? stateOptions.find((s) => String(s.id) === v)?.name ?? "State" : "All states"
+              }
             >
+              <MenuItem value="">All states</MenuItem>
+              {stateOptions.map((s) => (
+                <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={FIELD_SX}>
+            <Select
+              value={cityFilter}
+              displayEmpty
+              aria-label="City"
+              onChange={(e) => {
+                setCityFilter(e.target.value as string);
+                setPage(0);
+              }}
+              renderValue={(v) =>
+                v ? cityOptions.find((c) => String(c.id) === v)?.name ?? "City" : "All cities"
+              }
+            >
+              <MenuItem value="">All cities</MenuItem>
+              {cityOptions.map((c) => (
+                <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {hasFilters && (
+            <Button size="small" onClick={clearFilters}>
               Clear
             </Button>
           )}
@@ -284,6 +353,23 @@ export default function LandingPagesListPage() {
           </Stack>
         ) : isError ? (
           <Alert severity="error">Could not load landing pages.</Alert>
+        ) : rows.length === 0 && hasFilters ? (
+          <Stack alignItems="center" spacing={1.5} sx={{ py: 6 }}>
+            <SearchOff sx={{ fontSize: 40, color: "text.disabled" }} />
+            <Typography variant="subtitle1" fontWeight={600}>
+              No pages match these filters
+            </Typography>
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ maxWidth: 440, textAlign: "center" }}
+            >
+              Clear the search, type, status, state and city filters to see every page.
+            </Typography>
+            <Button variant="outlined" onClick={clearFilters} sx={{ mt: 1 }}>
+              Clear filters
+            </Button>
+          </Stack>
         ) : rows.length === 0 ? (
           <Stack alignItems="center" spacing={1.5} sx={{ py: 6 }}>
             <Public sx={{ fontSize: 40, color: "text.disabled" }} />

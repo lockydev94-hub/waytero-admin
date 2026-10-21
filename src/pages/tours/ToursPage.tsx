@@ -98,6 +98,7 @@ export default function ToursPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [cityFilter, setCityFilter] = useState("ALL");
+  const [partnerFilter, setPartnerFilter] = useState("ALL");
   const [bookingStatusFilter, setBookingStatusFilter] = useState("ALL");
 
   const [editorOpen, setEditorOpen] = useState(false);
@@ -128,10 +129,11 @@ export default function ToursPage() {
   });
 
   const packagesQuery = useQuery<TourPackage[]>({
-    queryKey: ["admin-tour-packages", statusFilter, cityFilter, search],
+    queryKey: ["admin-tour-packages", statusFilter, cityFilter, partnerFilter, search],
     queryFn: () => tourService.listPackages({
       ...(statusFilter !== "ALL" ? { status: statusFilter } : {}),
       ...(cityFilter !== "ALL" ? { city_id: cityFilter } : {}),
+      ...(partnerFilter !== "ALL" ? { partner_id: partnerFilter } : {}),
       ...(search.trim() ? { search: search.trim() } : {}),
     }),
   });
@@ -241,8 +243,19 @@ export default function ToursPage() {
                 ))}
               </Stack>
               <TextField
+                size="small" select label="Partner" value={partnerFilter} onChange={e => setPartnerFilter(e.target.value)}
+                sx={{ minWidth: 200, ml: "auto" }}
+              >
+                <MenuItem value="ALL">All partners</MenuItem>
+                {partners.map((p: any) => (
+                  <MenuItem key={p.id} value={String(p.id)}>
+                    {p.business_name || p.contact_person || p.partner_code || `Partner #${p.id}`}
+                  </MenuItem>
+                ))}
+              </TextField>
+              <TextField
                 size="small" select label="City" value={cityFilter} onChange={e => setCityFilter(e.target.value)}
-                sx={{ minWidth: 180, ml: "auto" }}
+                sx={{ minWidth: 180 }}
               >
                 <MenuItem value="ALL">All cities</MenuItem>
                 {cities.map((c: any) => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}

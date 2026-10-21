@@ -22,6 +22,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 import { hotelService, COMMISSION_SOURCE_LABELS } from "../../services/hotel.service";
+import { useCities } from "../../hooks/useCities";
 
 interface AuditRow {
   hotel_id: number;
@@ -81,13 +82,16 @@ export default function HotelCommissionAuditPage() {
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [cityFilter, setCityFilter] = useState<number | "">("");
+  const { cities } = useCities();
 
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ["hotel-commission-audit", search, sourceFilter, page, rowsPerPage],
+    queryKey: ["hotel-commission-audit", search, sourceFilter, cityFilter, page, rowsPerPage],
     queryFn: () =>
       hotelService.commissionAudit({
         search: search || undefined,
         source: sourceFilter || undefined,
+        city_id: cityFilter || undefined,
         page: page + 1,
         page_size: rowsPerPage,
       }),
@@ -125,9 +129,13 @@ export default function HotelCommissionAuditPage() {
         </Stack>
       </Box>
 
-      {/* Source distribution strip */}
+      {/* Source mix across the rows in view — the strip is page-local, so it
+          says so rather than reading as the platform-wide distribution. */}
       {!isLoading && items.length > 0 && (
-        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
+        <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1, alignItems: "center" }}>
+          <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+            This page by source:
+          </Typography>
           {Object.entries(stats).map(([source, n]) => (
             <Chip
               key={source}
@@ -168,6 +176,19 @@ export default function HotelCommissionAuditPage() {
                 <MenuItem value="CITY_RULE">City rule</MenuItem>
                 <MenuItem value="GLOBAL_RULE">Global rule</MenuItem>
                 <MenuItem value="SYSTEM_DEFAULT">Platform default</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 170 }}>
+              <InputLabel>City</InputLabel>
+              <Select
+                label="City"
+                value={cityFilter}
+                onChange={(e) => { setCityFilter(e.target.value as number | ""); setPage(0); }}
+              >
+                <MenuItem value="">All cities</MenuItem>
+                {cities.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Stack>

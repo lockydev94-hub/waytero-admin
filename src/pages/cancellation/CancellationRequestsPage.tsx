@@ -9,6 +9,7 @@ import {
   Table, TableHead, TableBody, TableRow, TableCell, TablePagination,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField,
   Avatar, Divider, Alert, Tabs, Tab, Tooltip, Grid, CircularProgress,
+  FormControl, InputLabel, Select, MenuItem,
 } from "@mui/material";
 import {
   Cancel, CheckCircle, Block, HourglassBottom, Info,
@@ -28,6 +29,7 @@ const STATUS_COLORS: Record<string, "default" | "primary" | "warning" | "success
 
 export default function CancellationRequestsPage() {
   const [tab, setTab] = useState(0); // 0=PENDING, 1=ALL, 2=APPROVED, 3=REJECTED
+  const [bookingType, setBookingType] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
   const [reviewing, setReviewing] = useState<CancellationRequestItem | null>(null);
@@ -45,9 +47,10 @@ export default function CancellationRequestsPage() {
   const { enqueueSnackbar } = useSnackbar();
 
   const listQuery = useQuery({
-    queryKey: ["cancel-requests", statusFilter, page + 1, pageSize],
+    queryKey: ["cancel-requests", statusFilter, bookingType, page + 1, pageSize],
     queryFn: () => cancellationService.listRequests({
       status: statusFilter,
+      booking_type: bookingType || undefined,
       page: page + 1,
       page_size: pageSize,
     }),
@@ -119,12 +122,27 @@ export default function CancellationRequestsPage() {
       </Stack>
 
       <Card>
-        <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(0); }}>
-          <Tab label="Pending" />
-          <Tab label="All" />
-          <Tab label="Approved" />
-          <Tab label="Rejected" />
-        </Tabs>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" useFlexGap>
+          <Tabs value={tab} onChange={(_, v) => { setTab(v); setPage(0); }}>
+            <Tab label="Pending" />
+            <Tab label="All" />
+            <Tab label="Approved" />
+            <Tab label="Rejected" />
+          </Tabs>
+          <FormControl size="small" sx={{ minWidth: 170, mr: 2, my: 1 }}>
+            <InputLabel>Service</InputLabel>
+            <Select
+              label="Service"
+              value={bookingType}
+              onChange={(e) => { setBookingType(e.target.value); setPage(0); }}
+            >
+              <MenuItem value="">All services</MenuItem>
+              <MenuItem value="CAB">Cab</MenuItem>
+              <MenuItem value="HOTEL">Hotel</MenuItem>
+              <MenuItem value="TOUR">Tour</MenuItem>
+            </Select>
+          </FormControl>
+        </Stack>
         <Divider />
         <Table size="small">
           <TableHead>

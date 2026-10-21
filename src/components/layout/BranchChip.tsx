@@ -72,6 +72,7 @@ export function BranchChip() {
         }}
         displayEmpty
         sx={{
+          display: { xs: "none", sm: "inline-flex" },
           minWidth: 158,
           maxWidth: 220,
           fontSize: 13,

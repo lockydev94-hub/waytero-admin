@@ -52,7 +52,7 @@ export interface NoticeStats {
 }
 
 export const noticesService = {
-  async list(params?: { status?: string; notice_type?: string; page?: number; page_size?: number }): Promise<NoticesPageData> {
+  async list(params?: { status?: string; notice_type?: string; audience?: string; page?: number; page_size?: number }): Promise<NoticesPageData> {
     const res = await apiClient.get("/admin/notices", { params });
     return res.data.data ?? res.data;
   },

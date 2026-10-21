@@ -195,6 +195,7 @@ export const partnerService = {
     page_size?: number;
     partner_type?: string;
     city_id?: number;
+    search?: string;
   } = {}): Promise<AdminPartnerPage> =>
     apiClient.get<AdminPartnerPage>("/admin/partners", { params }).then((r) => r.data),
 

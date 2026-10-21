@@ -18,7 +18,8 @@ import { useNavigate } from "react-router-dom";
 import {
   Box, Card, CardContent, Stack, Typography, Chip, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Skeleton, Alert,
-  IconButton, Tooltip, Grid, Divider, Avatar, Button,
+  IconButton, Tooltip, Grid, Divider, Avatar, Button, MenuItem,
+  TextField,
 } from "@mui/material";
 import {
   Refresh, OpenInNew, SwapHoriz, WarningAmber, AccountBalance,
@@ -27,6 +28,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 
 import breakdownService from "../../services/breakdown.service";
+import { partnerService } from "../../services/partner.service";
 import { apiErrorMessage } from "../../utils/apiError";
 
 const QUERY_KEY = "handover-reconciliation";
@@ -51,6 +53,13 @@ export default function HandoverReconciliationPage() {
   const navigate = useNavigate();
   const [partnerFilter, setPartnerFilter] = useState<number | null>(null);
 
+  const { data: partnerPage } = useQuery({
+    queryKey: ["handover-partner-options"],
+    queryFn: () => partnerService.list({ page_size: 500 }),
+    staleTime: 5 * 60_000,
+  });
+  const partnerOptions = partnerPage?.items ?? [];
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: [QUERY_KEY, partnerFilter],
     queryFn: () =>
@@ -74,6 +83,27 @@ export default function HandoverReconciliationPage() {
           out their wallet accordingly.
         </Typography>
       </Box>
+
+      <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
+        <TextField
+          select
+          size="small"
+          label="Partner"
+          value={partnerFilter ?? ""}
+          onChange={(e) => setPartnerFilter(e.target.value ? Number(e.target.value) : null)}
+          sx={{ minWidth: 240 }}
+        >
+          <MenuItem value="">All partners</MenuItem>
+          {partnerOptions.map((p) => (
+            <MenuItem key={p.id} value={p.id}>
+              {p.business_name || p.contact_person || p.partner_code || `Partner #${p.id}`}
+            </MenuItem>
+          ))}
+        </TextField>
+        {partnerFilter != null && (
+          <Button size="small" onClick={() => setPartnerFilter(null)}>Clear</Button>
+        )}
+      </Stack>
 
       {isError && (
         <Alert severity="error" sx={{ mb: 2 }}>

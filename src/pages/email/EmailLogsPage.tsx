@@ -10,7 +10,7 @@ import {
   TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
   IconButton, Chip, Button, Dialog, DialogTitle, DialogContent,
   DialogActions, TextField, Tooltip, CircularProgress, Alert,
-  Pagination, Stack, Drawer, Grid,
+  Pagination, Stack, Drawer, Grid, FormControl, InputLabel, Select, MenuItem,
 } from "@mui/material";
 import {
   Refresh, Replay, Search, Visibility, CheckCircle, ErrorOutline,
@@ -29,6 +29,8 @@ export default function EmailLogsPage() {
   const { enqueueSnackbar } = useSnackbar();
   const [tab, setTab] = useState(0);
   const [search, setSearch] = useState("");
+  const [eventFilter, setEventFilter] = useState("");
+  const [events, setEvents] = useState<{ code: string; label: string }[]>([]);
   const [data, setData] = useState<EmailLogsPageData | null>(null);
   const [stats, setStats] = useState<EmailStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,7 +45,13 @@ export default function EmailLogsPage() {
     setLoading(true);
     try {
       const [logs, st] = await Promise.all([
-        emailService.getLogs({ status: status || undefined, search: search || undefined, page, page_size: 20 }),
+        emailService.getLogs({
+          status: status || undefined,
+          event_type: eventFilter || undefined,
+          search: search || undefined,
+          page,
+          page_size: 20,
+        }),
         emailService.getStats(),
       ]);
       setData(logs);
@@ -53,9 +61,15 @@ export default function EmailLogsPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, search, page, enqueueSnackbar]);
+  }, [status, eventFilter, search, page, enqueueSnackbar]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Event vocabulary lives on the server so a new email type appears in the
+  // filter without a frontend release.
+  useEffect(() => {
+    emailService.getEventTypes().then(setEvents).catch(() => setEvents([]));
+  }, []);
 
   const openDetail = async (id: number) => {
     try {
@@ -133,14 +147,30 @@ export default function EmailLogsPage() {
             </Tabs>
           }
           action={
-            <TextField
-              size="small"
-              placeholder="Search recipient / subject…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              sx={{ width: 260, "& .MuiInputBase-root": { fontSize: 13 } }}
-              InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.5, color: "text.secondary" }} /> }}
-            />
+            <Stack direction="row" spacing={1} alignItems="center">
+              <FormControl size="small" sx={{ minWidth: 190 }}>
+                <InputLabel>Event</InputLabel>
+                <Select
+                  label="Event"
+                  value={eventFilter}
+                  onChange={(e) => { setEventFilter(e.target.value); setPage(1); }}
+                  sx={{ "& .MuiInputBase-root": { fontSize: 13 } }}
+                >
+                  <MenuItem value="">All events</MenuItem>
+                  {events.map((ev) => (
+                    <MenuItem key={ev.code} value={ev.code}>{ev.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                size="small"
+                placeholder="Search recipient / subject…"
+                value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+                sx={{ width: 240, "& .MuiInputBase-root": { fontSize: 13 } }}
+                InputProps={{ startAdornment: <Search sx={{ fontSize: 16, mr: 0.5, color: "text.secondary" }} /> }}
+              />
+            </Stack>
           }
         />
         <TableContainer>

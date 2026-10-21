@@ -5,7 +5,7 @@
 //   Header → KPI strip → Filter Card → Table Card → Pagination
 // ============================================================
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Stack,
@@ -64,11 +64,22 @@ export default function AuditPage() {
 
   // Filter state
   const [search, setSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [moduleFilter, setModuleFilter] = useState<string>("");
   const [actionFilter, setActionFilter] = useState<string>("");
   const [userId, setUserId] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+
+  // Type-ahead, not one request per keystroke. The server searches module,
+  // action and entity together.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // Pagination — MUI is 0-based, backend is 1-based.
   const [page, setPage] = useState(0);
@@ -81,13 +92,14 @@ export default function AuditPage() {
     () => ({
       page: page + 1,
       page_size: pageSize,
+      ...(search ? { q: search } : {}),
       ...(moduleFilter ? { module: moduleFilter } : {}),
       ...(actionFilter ? { action_type: actionFilter } : {}),
       ...(userId.trim() ? { user_id: Number(userId) || undefined } : {}),
       ...(dateFrom ? { date_from: new Date(dateFrom).toISOString() } : {}),
       ...(dateTo ? { date_to: new Date(`${dateTo}T23:59:59`).toISOString() } : {}),
     }),
-    [page, pageSize, moduleFilter, actionFilter, userId, dateFrom, dateTo],
+    [page, pageSize, search, moduleFilter, actionFilter, userId, dateFrom, dateTo],
   );
 
   const { data, isLoading, isFetching, refetch } = useAuditLogs(params);
@@ -97,10 +109,11 @@ export default function AuditPage() {
   const total = data?.total ?? 0;
 
   const hasActiveFilters =
-    !!search.trim() || !!moduleFilter || !!actionFilter || !!userId.trim() || !!dateFrom || !!dateTo;
+    !!searchInput.trim() || !!moduleFilter || !!actionFilter || !!userId.trim() || !!dateFrom || !!dateTo;
 
   const clearFilters = () => {
     setSearch("");
+    setSearchInput("");
     setModuleFilter("");
     setActionFilter("");
     setUserId("");
@@ -114,6 +127,7 @@ export default function AuditPage() {
       const exportData = await auditService.list({
         page: 1,
         page_size: 200,
+        ...(search ? { q: search } : {}),
         ...(moduleFilter ? { module: moduleFilter } : {}),
         ...(actionFilter ? { action_type: actionFilter } : {}),
       });
@@ -229,8 +243,8 @@ export default function AuditPage() {
           >
             <TextField
               placeholder="Search module, action, entity…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               size="small"
               sx={{ minWidth: 260, flex: 1 }}
               InputProps={{

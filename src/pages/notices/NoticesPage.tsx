@@ -38,6 +38,8 @@ const PRIORITY_COLOR: Record<string, string> = {
 export default function NoticesPage() {
   const { enqueueSnackbar } = useSnackbar();
   const [tab, setTab] = useState(0);
+  const [typeFilter, setTypeFilter] = useState("");
+  const [audienceFilter, setAudienceFilter] = useState("");
   const [data, setData] = useState<{ total: number; page: number; total_pages: number; items: NoticeItem[] } | null>(null);
   const [stats, setStats] = useState<NoticeStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -61,7 +63,13 @@ export default function NoticesPage() {
     setLoading(true);
     try {
       const [list, st] = await Promise.all([
-        noticesService.list({ status: status || undefined, page, page_size: 20 }),
+        noticesService.list({
+          status: status || undefined,
+          notice_type: typeFilter || undefined,
+          audience: audienceFilter || undefined,
+          page,
+          page_size: 20,
+        }),
         noticesService.stats(),
       ]);
       setData(list);
@@ -71,7 +79,7 @@ export default function NoticesPage() {
     } finally {
       setLoading(false);
     }
-  }, [status, page, enqueueSnackbar]);
+  }, [status, typeFilter, audienceFilter, page, enqueueSnackbar]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -186,6 +194,37 @@ export default function NoticesPage() {
                 <Tab key={t.key} label={t.label} sx={{ minHeight: 40, fontSize: 13 }} />
               ))}
             </Tabs>
+          }
+          action={
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 1 }}>
+              <FormControl size="small" sx={{ minWidth: 210 }}>
+                <InputLabel>Type</InputLabel>
+                <Select
+                  label="Type"
+                  value={typeFilter}
+                  onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
+                  sx={{ "& .MuiInputBase-root": { fontSize: 13 } }}
+                >
+                  <MenuItem value="">All types</MenuItem>
+                  {NOTICE_TYPES.map((t) => (
+                    <MenuItem key={t.code} value={t.code}>{t.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Audience</InputLabel>
+                <Select
+                  label="Audience"
+                  value={audienceFilter}
+                  onChange={(e) => { setAudienceFilter(e.target.value); setPage(1); }}
+                  sx={{ "& .MuiInputBase-root": { fontSize: 13 } }}
+                >
+                  <MenuItem value="">Everyone</MenuItem>
+                  <MenuItem value="ALL_PARTNERS">All partners</MenuItem>
+                  <MenuItem value="PARTNER">One partner</MenuItem>
+                </Select>
+              </FormControl>
+            </Stack>
           }
         />
         <TableContainer>

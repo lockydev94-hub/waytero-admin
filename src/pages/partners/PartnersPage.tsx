@@ -8,7 +8,7 @@
 // City name fix: cities list passed as prop into KycModal to avoid stale render
 // ============================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Box, Typography, Card, CardContent, Chip, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -2834,11 +2834,20 @@ export default function PartnersPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [registerOpen, setRegisterOpen] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   // ── Load cities ONCE at page level and pass down ──────────────────────────
   const { data: cities = [] } = useCities();
@@ -2847,21 +2856,16 @@ export default function PartnersPage() {
   // branch account is refused by the scope gate — showing "No partners found"
   // would tell them the partner network is empty.
   const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ["admin-partners", page, rowsPerPage, statusFilter, typeFilter],
+    queryKey: ["admin-partners", page, rowsPerPage, statusFilter, typeFilter, search],
     queryFn: () =>
       partnerService.list({ page: page + 1, page_size: rowsPerPage,
-        status: statusFilter || undefined, partner_type: typeFilter || undefined }),
+        status: statusFilter || undefined, partner_type: typeFilter || undefined,
+        search: search || undefined }),
     placeholderData: (prev) => prev,
     retry: false,
   });
 
   const partners: AdminPartnerListItem[] = data?.items ?? [];
-  const filtered = search
-    ? partners.filter((p) =>
-        [p.contact_person, p.business_name, p.partner_code, p.mobile_number]
-          .some((v) => v?.toLowerCase().includes(search.toLowerCase()))
-      )
-    : partners;
 
   // Status counts for chips
   const statusCounts: Record<string, number> = useMemo(() => {
@@ -2905,8 +2909,8 @@ export default function PartnersPage() {
       <Card sx={{ mb: 2, borderRadius: 2.5 }}>
         <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
           <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
-            <TextField size="small" placeholder="Search by name, code, mobile…" value={search}
-              onChange={(e) => setSearch(e.target.value)}
+            <TextField size="small" placeholder="Search by name, code, mobile…" value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               InputProps={{ startAdornment: <Search fontSize="small" sx={{ mr: 0.5, color: "text.disabled" }} /> }}
               sx={{ minWidth: 240, flex: 1 }} />
             <FormControl size="small" sx={{ minWidth: 160 }}>
@@ -2947,14 +2951,14 @@ export default function PartnersPage() {
                     </Alert>
                   </TableCell>
                 </TableRow>
-              ) : filtered.length === 0 && !isLoading && (
+              ) : partners.length === 0 && !isLoading && (
                 <TableRow>
                   <TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.disabled" }}>
                     No partners found
                   </TableCell>
                 </TableRow>
               )}
-              {filtered.map((p) => {
+              {partners.map((p) => {
                 const rowActions = getActions(p.status).slice(0, 2);
                 return (
                   <TableRow key={p.id} hover sx={{ cursor: "pointer", "& td": { py: 2, verticalAlign: "middle" } }}

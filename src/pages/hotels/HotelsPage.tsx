@@ -16,7 +16,7 @@ import {
   TablePagination, TextField, MenuItem, Select, FormControl, InputLabel,
   Stack, Tooltip, LinearProgress, Alert, Avatar, Grid,
   Skeleton, Chip, InputAdornment, alpha, useTheme,
-  ToggleButton, Menu,
+  Menu,
 } from "@mui/material";
 import {
   Hotel, Add, Refresh, Search, Visibility, MoreVert,
@@ -36,6 +36,7 @@ import {
 } from "../../services/hotel.service";
 import { HOTEL_QUERY_KEYS } from "./constants";
 import { currentUserType } from "../../utils/currentUser";
+import { useCities } from "../../hooks/useCities";
 import KpiCard from "./components/KpiCard";
 import HotelStatusChip from "./components/HotelStatusChip";
 import CompletenessMeter from "./components/CompletenessMeter";
@@ -46,6 +47,17 @@ const HotelDetailDialog = React.lazy(() => import("./modals/HotelDetailDialog"))
 
 // ── Helpers ─────────────────────────────────────────────────
 const COLS = 9; // total table columns for colSpan
+
+// Server-side ordering (HotelRepository.list_paginated whitelist).
+const HOTEL_SORT_OPTIONS = [
+  { value: "newest", label: "Newest first", sort_by: "created_at", sort_dir: "desc" },
+  { value: "oldest", label: "Oldest first", sort_by: "created_at", sort_dir: "asc" },
+  { value: "name", label: "Name · A to Z", sort_by: "hotel_name", sort_dir: "asc" },
+  { value: "rating", label: "Rating · high to low", sort_by: "star_rating", sort_dir: "desc" },
+] as const;
+
+const HOTEL_SORT_PARAMS: Record<string, { sort_by: string; sort_dir: string }> =
+  Object.fromEntries(HOTEL_SORT_OPTIONS.map((o) => [o.value, { sort_by: o.sort_by, sort_dir: o.sort_dir }]));
 
 function StarRating({ value }: { value: number | null }) {
   if (!value) return <Typography variant="caption" color="text.disabled">Unrated</Typography>;
@@ -152,8 +164,9 @@ export default function HotelsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [cityFilter, setCityFilter] = useState<number | "">("");
   const [categoryFilter, setCategoryFilter] = useState<number | "">("");
-  const [partnerFilter, setPartnerFilter] = useState<number | "">("");
-  const [myQueue, setMyQueue] = useState(false);
+  const [starFilter, setStarFilter] = useState<number | "">("");
+  const [sortKey, setSortKey] = useState("newest");
+  const { cities } = useCities();
 
   // ── Dialog state ──────────────────────────────────────────
   const [addOpen, setAddOpen] = useState(false);
@@ -167,7 +180,7 @@ export default function HotelsPage() {
   // ── Data queries ──────────────────────────────────────────
   const queryKey = [
     HOTEL_QUERY_KEYS.list, search, statusFilter, cityFilter,
-    categoryFilter, partnerFilter, myQueue, page, rowsPerPage,
+    categoryFilter, starFilter, sortKey, page, rowsPerPage,
   ];
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -178,9 +191,10 @@ export default function HotelsPage() {
         status: statusFilter || undefined,
         city_id: cityFilter || undefined,
         hotel_category_id: categoryFilter || undefined,
-        partner_id: partnerFilter || undefined,
+        star_rating: starFilter || undefined,
         page: page + 1,
         page_size: rowsPerPage,
+        ...HOTEL_SORT_PARAMS[sortKey],
       }),
     staleTime: 30_000,
   });
@@ -218,10 +232,10 @@ export default function HotelsPage() {
 
   const resetFilters = () => {
     setSearch(""); setSearchInput(""); setStatusFilter("");
-    setCityFilter(""); setCategoryFilter(""); setPartnerFilter("");
-    setMyQueue(false); setPage(0);
+    setCityFilter(""); setCategoryFilter(""); setStarFilter("");
+    setSortKey("newest"); setPage(0);
   };
-  const hasFilters = !!(search || statusFilter || cityFilter || categoryFilter || partnerFilter || myQueue);
+  const hasFilters = !!(search || statusFilter || cityFilter || categoryFilter || starFilter || sortKey !== "newest");
 
   // ── Open detail ───────────────────────────────────────────
   const openDetail = useCallback((id: number, tab = 0) => {
@@ -311,7 +325,7 @@ export default function HotelsPage() {
       {/* ── Filters ─────────────────────────────────────────── */}
       <Card variant="outlined" sx={{ borderRadius: 2, mb: 2 }}>
         <CardContent sx={{ py: 1.5, "&:last-child": { pb: 1.5 } }}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems={{ sm: "center" }} flexWrap="wrap" useFlexGap>
             <TextField
               size="small"
               placeholder="Search hotel name, code, partner…"
@@ -324,7 +338,7 @@ export default function HotelsPage() {
                   </InputAdornment>
                 ),
               }}
-              sx={{ flex: 1 }}
+              sx={{ flex: "1 1 240px", minWidth: { sm: 220 }, maxWidth: { sm: 340 } }}
             />
             <FormControl size="small" sx={{ minWidth: 160 }}>
               <InputLabel>Status</InputLabel>
@@ -352,17 +366,44 @@ export default function HotelsPage() {
                 ))}
               </Select>
             </FormControl>
-            {isOfficer && (
-              <ToggleButton
-                value="myQueue"
-                selected={myQueue}
-                size="small"
-                onChange={() => { setMyQueue((p) => !p); setPage(0); }}
-                sx={{ borderRadius: 2, fontWeight: 600, fontSize: 13, px: 2 }}
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel>City</InputLabel>
+              <Select
+                label="City"
+                value={cityFilter}
+                onChange={(e) => { setCityFilter(e.target.value as number | ""); setPage(0); }}
               >
-                My queue
-              </ToggleButton>
-            )}
+                <MenuItem value="">All Cities</MenuItem>
+                {cities.map((c) => (
+                  <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 130 }}>
+              <InputLabel>Rating</InputLabel>
+              <Select
+                label="Rating"
+                value={starFilter}
+                onChange={(e) => { setStarFilter(e.target.value as number | ""); setPage(0); }}
+              >
+                <MenuItem value="">Any Rating</MenuItem>
+                {[5, 4, 3, 2, 1].map((n) => (
+                  <MenuItem key={n} value={n}>{n}★</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 180 }}>
+              <InputLabel>Sort</InputLabel>
+              <Select
+                label="Sort"
+                value={sortKey}
+                onChange={(e) => { setSortKey(e.target.value); setPage(0); }}
+              >
+                {HOTEL_SORT_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             {hasFilters && (
               <Button size="small" onClick={resetFilters} sx={{ whiteSpace: "nowrap" }}>
                 Clear filters

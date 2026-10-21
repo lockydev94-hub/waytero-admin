@@ -54,8 +54,8 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
 
   return (
     <AppBar position="sticky" elevation={0}>
-      <Toolbar sx={{ gap: 1 }}>
-        <IconButton edge="start" onClick={onToggleSidebar} size="small" sx={{ mr: 1 }}>
+      <Toolbar sx={{ gap: 1.25, px: { xs: 2, md: 3 }, minHeight: { xs: 56, md: 64 } }}>
+        <IconButton edge="start" onClick={onToggleSidebar} size="small" sx={{ mr: 0.5 }}>
           {sidebarOpen ? <ChevronLeft /> : <MenuIcon />}
         </IconButton>
 
@@ -66,39 +66,50 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
 
         <GlobalSearch />
 
-        {/* Whose office these numbers are for — a chip for a branch account,
-            a switcher for the master admin. */}
-        <BranchChip />
+        {/* Utilities hug the right edge: the search grows up to its cap, and
+            whatever is left over becomes the gap between the two groups
+            instead of a dead strip after the avatar. */}
+        <Box sx={{ ml: "auto", display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ display: { xs: "none", md: "block" }, my: 1.75, mx: 0.5 }}
+          />
 
-        {/* Idle countdown — only meaningful once an unlock PIN exists */}
-        {hasMpin && (
-          <Tooltip title="The dashboard locks after this much inactivity. Move the mouse or press a key to reset it.">
-            <Chip
-              size="small"
-              variant="outlined"
-              icon={<LockIcon />}
-              label={`locks in ${mmss(idleRemainingMs)}`}
-              sx={{ display: { xs: "none", sm: "flex" }, fontVariantNumeric: "tabular-nums" }}
-            />
+          {/* Whose office these numbers are for — a chip for a branch account,
+              a switcher for the master admin. */}
+          <BranchChip />
+
+          {/* Idle countdown — only meaningful once an unlock PIN exists */}
+          {hasMpin && (
+            <Tooltip title="The dashboard locks after this much inactivity. Move the mouse or press a key to reset it.">
+              <Chip
+                size="small"
+                variant="outlined"
+                icon={<LockIcon />}
+                label={`locks in ${mmss(idleRemainingMs)}`}
+                sx={{ display: { xs: "none", sm: "flex" }, ml: 0.5, fontVariantNumeric: "tabular-nums" }}
+              />
+            </Tooltip>
+          )}
+
+          <Tooltip title={themeMode === "light" ? "Dark mode" : "Light mode"}>
+            <IconButton onClick={toggleTheme} size="small" sx={{ ml: 0.5 }}>
+              {themeMode === "light" ? <DarkMode fontSize="small" /> : <LightMode fontSize="small" />}
+            </IconButton>
           </Tooltip>
-        )}
 
-        <Tooltip title={themeMode === "light" ? "Dark mode" : "Light mode"}>
-          <IconButton onClick={toggleTheme} size="small">
-            {themeMode === "light" ? <DarkMode fontSize="small" /> : <LightMode fontSize="small" />}
-          </IconButton>
-        </Tooltip>
+          {/* Notifications bell (Doc Ref: BRD Part 7 §155) */}
+          <NotificationsDropdown />
 
-        {/* Notifications bell (Doc Ref: BRD Part 7 §155) */}
-        <NotificationsDropdown />
-
-        <Tooltip title="Account">
-          <IconButton size="small" onClick={(e) => openMenu(e.currentTarget)}>
-            <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13, fontWeight: 700 }}>
-              {user?.full_name?.[0] ?? user?.mobile?.[0] ?? "A"}
-            </Avatar>
-          </IconButton>
-        </Tooltip>
+          <Tooltip title="Account">
+            <IconButton size="small" onClick={(e) => openMenu(e.currentTarget)} sx={{ ml: 0.5 }}>
+              <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13, fontWeight: 700 }}>
+                {user?.full_name?.[0] ?? user?.mobile?.[0] ?? "A"}
+              </Avatar>
+            </IconButton>
+          </Tooltip>
+        </Box>
 
         <Menu
           anchorEl={anchorEl}

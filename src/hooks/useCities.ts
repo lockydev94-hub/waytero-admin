@@ -18,7 +18,7 @@ export interface UseCitiesResult {
   isError: boolean;
 }
 
-export function useCities(): UseCitiesResult {
+export function useCities(options?: { enabled?: boolean }): UseCitiesResult {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-cities-active"],
     // Called on the client rather than through settingsService, whose master
@@ -29,6 +29,7 @@ export function useCities(): UseCitiesResult {
         .get<City[]>("/admin/settings/master/cities", { params: { active_only: true } })
         .then((r) => r.data),
     staleTime: CACHE_TTL.LONG,
+    enabled: options?.enabled ?? true,
   });
 
   return { cities: data ?? [], isLoading, isError };

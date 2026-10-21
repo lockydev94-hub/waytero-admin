@@ -26,6 +26,7 @@ import { bookingService, BookingListItem, BookingStats, PaginatedBookings } from
 import { format } from "date-fns";
 import { useRealtime } from "../../hooks/useRealtime";
 import { useOfficeByCity } from "../../hooks/useBranches";
+import { useCities } from "../../hooks/useCities";
 import { useAuthStore } from "../../stores/authStore";
 
 // ── Status Config ─────────────────────────────────────────────
@@ -48,6 +49,36 @@ const BOOKING_STATUS_CONFIG: Record<string, { color: "default" | "primary" | "su
   COMPLETED:       { color: "success" },
   CLOSED:          { color: "success" },
   CANCELLED:       { color: "error" },
+};
+
+// payment_status is derived from the payments ledger: nothing held, some held,
+// or the fare covered.
+const PAYMENT_STATUS_OPTIONS = [
+  { value: "", label: "All Payments" },
+  { value: "PENDING", label: "Payment Pending" },
+  { value: "PARTIAL", label: "Partially Paid" },
+  { value: "PAID", label: "Paid" },
+];
+
+// Sort options map to the backend's whitelist. Newest-first stays the default
+// because the list is a booking register, not a work queue — the desk narrows
+// it with the filters, and can order by journey date when planning a day.
+const SORT_OPTIONS = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "journey_soonest", label: "Journey date · soonest" },
+  { value: "journey_latest", label: "Journey date · latest" },
+  { value: "amount_high", label: "Amount · high to low" },
+  { value: "amount_low", label: "Amount · low to high" },
+] as const;
+
+const SORT_PARAMS: Record<string, { sort_by: "created_at" | "journey_start_date" | "total_amount"; sort_dir: "asc" | "desc" }> = {
+  newest: { sort_by: "created_at", sort_dir: "desc" },
+  oldest: { sort_by: "created_at", sort_dir: "asc" },
+  journey_soonest: { sort_by: "journey_start_date", sort_dir: "asc" },
+  journey_latest: { sort_by: "journey_start_date", sort_dir: "desc" },
+  amount_high: { sort_by: "total_amount", sort_dir: "desc" },
+  amount_low: { sort_by: "total_amount", sort_dir: "asc" },
 };
 
 const CAB_STATUS_CONFIG: Record<string, { color: string; label: string }> = {
@@ -128,6 +159,9 @@ export default function BookingsPage() {
   // shown a column of the same word repeated.
   const seesAllBranches = useAuthStore((s) => s.user?.user_type === "SUPER_ADMIN");
   const officeByCity = useOfficeByCity();
+  // The city filter is a master-admin tool; a branch account is already fixed
+  // to its own city by the server, so the list is not fetched there.
+  const { cities } = useCities({ enabled: seesAllBranches });
 
   // Filters
   const [page, setPage] = useState(0);
@@ -136,7 +170,10 @@ export default function BookingsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [bookingStatus, setBookingStatus] = useState("");
   const [serviceType, setServiceType] = useState("");
+  const [paymentStatus, setPaymentStatus] = useState("");
   const [journeyDate, setJourneyDate] = useState("");
+  const [cityFilter, setCityFilter] = useState("");
+  const [sortKey, setSortKey] = useState("newest");
 
   // Stats
   const { data: stats, isLoading: statsLoading } = useQuery<BookingStats>({
@@ -147,14 +184,17 @@ export default function BookingsPage() {
 
   // List
   const { data, isLoading, isError, refetch } = useQuery<PaginatedBookings>({
-    queryKey: ["admin-bookings", page + 1, pageSize, bookingStatus, serviceType, search, journeyDate],
+    queryKey: ["admin-bookings", page + 1, pageSize, bookingStatus, serviceType, paymentStatus, search, journeyDate, cityFilter, sortKey],
     queryFn: () => bookingService.list({
       page: page + 1,
       page_size: pageSize,
       booking_status: bookingStatus || undefined,
       service_type: serviceType || undefined,
+      payment_status: paymentStatus || undefined,
       search: search || undefined,
       journey_date: journeyDate || undefined,
+      city_id: cityFilter ? Number(cityFilter) : undefined,
+      ...SORT_PARAMS[sortKey],
     }),
     staleTime: 15_000,
   });
@@ -166,7 +206,8 @@ export default function BookingsPage() {
 
   const handleReset = () => {
     setSearch(""); setSearchInput(""); setBookingStatus("");
-    setServiceType(""); setJourneyDate(""); setPage(0);
+    setServiceType(""); setPaymentStatus(""); setJourneyDate("");
+    setCityFilter(""); setSortKey("newest"); setPage(0);
   };
 
   // ── Realtime: refetch list + stats when any booking status changes ──
@@ -236,55 +277,82 @@ export default function BookingsPage() {
       {/* ── Filter Bar ── */}
       <Card sx={{ borderRadius: 3, mb: 3, border: "1px solid", borderColor: "divider", boxShadow: "0 2px 8px rgba(0,0,0,0.05)" }}>
         <CardContent sx={{ p: 2 }}>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={4} md={3}>
-              <TextField
-                size="small" fullWidth
-                placeholder="Search booking #, name, mobile..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }}
-              />
-            </Grid>
-            <Grid item xs={6} sm={3} md={2}>
-              <FormControl size="small" fullWidth>
-                <InputLabel>Status</InputLabel>
-                <Select value={bookingStatus} label="Status" onChange={(e) => { setBookingStatus(e.target.value); setPage(0); }}>
-                  {BOOKING_STATUS_OPTIONS.map((o) => (
-                    <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            spacing={1.5}
+            flexWrap="wrap"
+            useFlexGap
+            alignItems={{ xs: "stretch", md: "center" }}
+          >
+            <TextField
+              size="small"
+              placeholder="Search booking #, name, mobile..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }}
+              sx={{ flex: "1 1 240px", minWidth: { md: 220 }, maxWidth: { md: 340 } }}
+            />
+            <FormControl size="small" sx={{ minWidth: 150 }}>
+              <InputLabel>Status</InputLabel>
+              <Select value={bookingStatus} label="Status" onChange={(e) => { setBookingStatus(e.target.value); setPage(0); }}>
+                {BOOKING_STATUS_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 135 }}>
+              <InputLabel>Service Type</InputLabel>
+              <Select value={serviceType} label="Service Type" onChange={(e) => { setServiceType(e.target.value); setPage(0); }}>
+                <MenuItem value="">All Services</MenuItem>
+                <MenuItem value="CAB">Cab</MenuItem>
+                <MenuItem value="HOTEL">Hotel</MenuItem>
+                <MenuItem value="TOUR">Tour</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>Payment</InputLabel>
+              <Select value={paymentStatus} label="Payment" onChange={(e) => { setPaymentStatus(e.target.value); setPage(0); }}>
+                {PAYMENT_STATUS_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              size="small"
+              label="Journey Date"
+              type="date"
+              value={journeyDate}
+              onChange={(e) => { setJourneyDate(e.target.value); setPage(0); }}
+              InputLabelProps={{ shrink: true }}
+              sx={{ width: { xs: "100%", md: 160 } }}
+            />
+            {seesAllBranches && (
+              <FormControl size="small" sx={{ minWidth: 165 }}>
+                <InputLabel>City</InputLabel>
+                <Select value={cityFilter} label="City" onChange={(e) => { setCityFilter(e.target.value); setPage(0); }}>
+                  <MenuItem value="">All Cities</MenuItem>
+                  {cities.map((c) => (
+                    <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
-            </Grid>
-            <Grid item xs={6} sm={3} md={2}>
-              <FormControl size="small" fullWidth>
-                <InputLabel>Service</InputLabel>
-                <Select value={serviceType} label="Service" onChange={(e) => { setServiceType(e.target.value); setPage(0); }}>
-                  <MenuItem value="">All Services</MenuItem>
-                  <MenuItem value="CAB">Cab</MenuItem>
-                  <MenuItem value="HOTEL">Hotel</MenuItem>
-                  <MenuItem value="TOUR">Tour</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={6} sm={3} md={2}>
-              <TextField
-                size="small" fullWidth
-                label="Journey Date"
-                type="date"
-                value={journeyDate}
-                onChange={(e) => { setJourneyDate(e.target.value); setPage(0); }}
-                InputLabelProps={{ shrink: true }}
-              />
-            </Grid>
-            <Grid item xs={12} sm={12} md={3}>
+            )}
+            <FormControl size="small" sx={{ minWidth: 190 }}>
+              <InputLabel>Sort</InputLabel>
+              <Select value={sortKey} label="Sort" onChange={(e) => { setSortKey(e.target.value); setPage(0); }}>
+                {SORT_OPTIONS.map((o) => (
+                  <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Box sx={{ ml: { md: "auto" } }}>
               <Stack direction="row" gap={1}>
                 <Button variant="contained" size="small" onClick={handleSearch} startIcon={<Search />}>Search</Button>
                 <Button variant="outlined" size="small" onClick={handleReset} color="inherit">Reset</Button>
               </Stack>
-            </Grid>
-          </Grid>
+            </Box>
+          </Stack>
         </CardContent>
       </Card>
 

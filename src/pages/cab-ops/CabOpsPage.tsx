@@ -33,6 +33,9 @@ import { useSnackbar } from "notistack";
 
 import { cabOpsService, CabOpsQueueItem, CabOpsInTripItem, CabOpsSosAlert } from "../../services/cabOps.service";
 import { breakdownService, ActiveBreakdownItem, AvailableVehicle, AvailablePartner, BreakdownReason } from "../../services/breakdown.service";
+import { partnerService } from "../../services/partner.service";
+import { useCities } from "../../hooks/useCities";
+import { useAuthStore } from "../../stores/authStore";
 import { apiErrorMessage } from "../../utils/apiError";
 
 const QUEUE_QUERY_KEY = "cab-ops-queue";
@@ -76,9 +79,26 @@ function QueueTab() {
   const { enqueueSnackbar } = useSnackbar();
   const queryClient = useQueryClient();
 
+  const seesAllBranches = useAuthStore((s) => s.user?.user_type === "SUPER_ADMIN");
+  const { cities } = useCities({ enabled: seesAllBranches });
+  const [cityFilter, setCityFilter] = useState("");
+  const [partnerFilter, setPartnerFilter] = useState("");
+
+  const { data: partnerPage } = useQuery({
+    queryKey: ["cab-ops-partner-options"],
+    queryFn: () => partnerService.list({ page_size: 200 }),
+    staleTime: 5 * 60_000,
+  });
+  const partnerOptions = partnerPage?.items ?? [];
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: [QUEUE_QUERY_KEY],
-    queryFn: () => cabOpsService.listQueue({ limit: 100 }),
+    queryKey: [QUEUE_QUERY_KEY, cityFilter, partnerFilter],
+    queryFn: () =>
+      cabOpsService.listQueue({
+        limit: 100,
+        city_id: cityFilter ? Number(cityFilter) : undefined,
+        partner_id: partnerFilter ? Number(partnerFilter) : undefined,
+      }),
     staleTime: 15_000,
     refetchInterval: 20_000,
   });
@@ -98,16 +118,64 @@ function QueueTab() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        spacing={1.5}
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mb: 2 }}
+      >
         <Stack direction="row" spacing={1.5} alignItems="center">
           <Timer sx={{ color: "warning.main" }} />
           <Typography variant="subtitle1" fontWeight={700}>
             {total} booking{total !== 1 ? "s" : ""} waiting on a partner
           </Typography>
         </Stack>
-        <Tooltip title="Refresh">
-          <IconButton onClick={() => refetch()}><Refresh /></IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+          {seesAllBranches && (
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>City</InputLabel>
+              <Select
+                label="City"
+                value={cityFilter}
+                onChange={(e) => setCityFilter(e.target.value)}
+              >
+                <MenuItem value="">All cities</MenuItem>
+                {cities.map((c) => (
+                  <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          <FormControl size="small" sx={{ minWidth: 210 }}>
+            <InputLabel>Partner</InputLabel>
+            <Select
+              label="Partner"
+              value={partnerFilter}
+              onChange={(e) => setPartnerFilter(e.target.value)}
+            >
+              <MenuItem value="">All partners</MenuItem>
+              {partnerOptions.map((p) => (
+                <MenuItem key={p.id} value={String(p.id)}>
+                  {p.business_name || p.contact_person || p.partner_code || `Partner #${p.id}`}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          {(cityFilter || partnerFilter) && (
+            <Button
+              size="small"
+              onClick={() => { setCityFilter(""); setPartnerFilter(""); }}
+            >
+              Clear
+            </Button>
+          )}
+          <Tooltip title="Refresh">
+            <IconButton onClick={() => refetch()}><Refresh /></IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       {isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to load queue.</Alert>}
@@ -236,11 +304,20 @@ function QueueTab() {
 
 // ── In-Trip Tab ────────────────────────────────────────────────
 function InTripTab() {
-  const theme = useTheme();
   const navigate = useNavigate();
+  const seesAllBranches = useAuthStore((s) => s.user?.user_type === "SUPER_ADMIN");
+  const { cities } = useCities({ enabled: seesAllBranches });
+  const [cityFilter, setCityFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: [IN_TRIP_QUERY_KEY],
-    queryFn: () => cabOpsService.listInTrip({ limit: 100 }),
+    queryKey: [IN_TRIP_QUERY_KEY, cityFilter, statusFilter],
+    queryFn: () =>
+      cabOpsService.listInTrip({
+        limit: 100,
+        city_id: cityFilter ? Number(cityFilter) : undefined,
+        status: (statusFilter || undefined) as "DRIVER_ASSIGNED" | "STARTED" | undefined,
+      }),
     staleTime: 15_000,
     refetchInterval: 20_000,
   });
@@ -249,16 +326,58 @@ function InTripTab() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+      <Stack
+        direction="row"
+        justifyContent="space-between"
+        alignItems="center"
+        spacing={1.5}
+        flexWrap="wrap"
+        useFlexGap
+        sx={{ mb: 2 }}
+      >
         <Stack direction="row" spacing={1.5} alignItems="center">
           <DirectionsCar sx={{ color: "info.main" }} />
           <Typography variant="subtitle1" fontWeight={700}>
             {total} trip{total !== 1 ? "s" : ""} on the road
           </Typography>
         </Stack>
-        <Tooltip title="Refresh">
-          <IconButton onClick={() => refetch()}><Refresh /></IconButton>
-        </Tooltip>
+        <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+          {seesAllBranches && (
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>City</InputLabel>
+              <Select
+                label="City"
+                value={cityFilter}
+                onChange={(e) => setCityFilter(e.target.value)}
+              >
+                <MenuItem value="">All cities</MenuItem>
+                {cities.map((c) => (
+                  <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+          <FormControl size="small" sx={{ minWidth: 180 }}>
+            <InputLabel>Status</InputLabel>
+            <Select
+              label="Status"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <MenuItem value="">Assigned + started</MenuItem>
+              <MenuItem value="DRIVER_ASSIGNED">Driver assigned</MenuItem>
+              <MenuItem value="STARTED">Trip started</MenuItem>
+            </Select>
+          </FormControl>
+          {(cityFilter || statusFilter) && (
+            <Button size="small" onClick={() => { setCityFilter(""); setStatusFilter(""); }}>
+              Clear
+            </Button>
+          )}
+          <Tooltip title="Refresh">
+            <IconButton onClick={() => refetch()}><Refresh /></IconButton>
+          </Tooltip>
+        </Stack>
       </Stack>
 
       {isError && <Alert severity="error" sx={{ mb: 2 }}>Failed to load in-trip feed.</Alert>}
@@ -710,7 +829,6 @@ function HandoverDialog({
 }
 
 function BreakdownTab() {
-  const theme = useTheme();
   const navigate = useNavigate();
   const { enqueueSnackbar } = useSnackbar();
   const queryClient = useQueryClient();

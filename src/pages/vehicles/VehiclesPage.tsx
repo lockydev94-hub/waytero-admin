@@ -2509,16 +2509,26 @@ export default function VehiclesPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(20);
   const [statusFilter, setStatusFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   // Vehicles list
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["admin-vehicles", statusFilter, page, rowsPerPage],
+    queryKey: ["admin-vehicles", statusFilter, search, page, rowsPerPage],
     queryFn: () =>
       vehicleService.listVehicles({
         status: statusFilter || undefined,
+        search: search || undefined,
         page: page + 1,
         page_size: rowsPerPage,
       }),
@@ -2539,18 +2549,6 @@ export default function VehiclesPage() {
       suspended: vehicles.filter((v) => v.status === "SUSPENDED").length,
     };
   }, [vehicles, total]);
-
-  // Client-side search
-  const filtered = useMemo(() => {
-    if (!search) return vehicles;
-    const q = search.toLowerCase();
-    return vehicles.filter((v) =>
-      v.registration_number?.toLowerCase().includes(q) ||
-      v.vehicle_code?.toLowerCase().includes(q) ||
-      v.make?.toLowerCase().includes(q) ||
-      v.model?.toLowerCase().includes(q)
-    );
-  }, [vehicles, search]);
 
   return (
     <Box>
@@ -2611,9 +2609,9 @@ export default function VehiclesPage() {
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} alignItems="center">
             <TextField
               size="small"
-              placeholder="Search reg. number, code, brand…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search reg. number, code, brand, partner…"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               InputProps={{ startAdornment: <InputAdornment position="start"><Search fontSize="small" /></InputAdornment> }}
               sx={{ flex: 1 }}
             />
@@ -2660,7 +2658,7 @@ export default function VehiclesPage() {
                     ))}
                   </TableRow>
                 ))
-              ) : filtered.length === 0 ? (
+              ) : vehicles.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
                     <Stack alignItems="center" spacing={1.5}>
@@ -2677,7 +2675,7 @@ export default function VehiclesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((v) => (
+                vehicles.map((v) => (
                   <TableRow
                     key={v.id} hover
                     sx={{ cursor: "pointer" }}

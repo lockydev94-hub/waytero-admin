@@ -99,6 +99,11 @@ export const emailService = {
     return res.data.data ?? res.data;
   },
 
+  async getEventTypes(): Promise<{ code: string; label: string }[]> {
+    const res = await apiClient.get("/admin/email/events");
+    return (res.data.data ?? res.data).events ?? [];
+  },
+
   async getLogDetail(id: number): Promise<EmailLogItem> {
     const res = await apiClient.get(`/admin/email/logs/${id}`);
     return res.data.data ?? res.data;

@@ -10,7 +10,7 @@
 // Document upload:  POST /drivers/{uuid}/documents  (uses driver uuid, not int id)
 // ============================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Box, Typography, Card, CardContent, Chip, Button, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -1429,31 +1429,30 @@ function DriverDetailModal({ driverId, onClose }: DetailModalProps) {
 
 export default function DriversPage() {
   const [statusFilter, setStatusFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
   const [addOpen, setAddOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(0);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const params = useMemo(() => ({
     ...(statusFilter ? { status: statusFilter } : {}),
+    ...(search ? { search } : {}),
     page: page + 1,
     page_size: pageSize,
-  }), [statusFilter, page, pageSize]);
+  }), [statusFilter, search, page, pageSize]);
 
   const { data, isLoading, isFetching, refetch } = useDrivers(params);
-
-  const filtered = useMemo(() => {
-    if (!data?.items) return [];
-    if (!search.trim()) return data.items;
-    const q = search.toLowerCase();
-    return data.items.filter(d =>
-      d.full_name?.toLowerCase().includes(q) ||
-      d.mobile_number?.includes(q) ||
-      d.driver_code?.toLowerCase().includes(q) ||
-      d.license_number?.toLowerCase().includes(q)
-    );
-  }, [data, search]);
+  const drivers = data?.items ?? [];
 
   const counts = useMemo(() => {
     const items = data?.items ?? [];
@@ -1523,8 +1522,8 @@ export default function DriversPage() {
           <Stack direction={{ xs: "column", sm: "row" }} gap={2} alignItems="center">
             <TextField
               placeholder="Search name, mobile, code, license…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
               size="small"
               sx={{ minWidth: 280 }}
               InputProps={{
@@ -1539,15 +1538,15 @@ export default function DriversPage() {
                 {DRIVER_STATUSES.map(s => <MenuItem key={s} value={s}>{STATUS_META[s]?.label ?? s}</MenuItem>)}
               </Select>
             </FormControl>
-            {(statusFilter || search) && (
-              <Button size="small" onClick={() => { setStatusFilter(""); setSearch(""); }} variant="outlined" color="inherit"
+            {(statusFilter || searchInput) && (
+              <Button size="small" onClick={() => { setStatusFilter(""); setSearchInput(""); setSearch(""); }} variant="outlined" color="inherit"
                 sx={{ textTransform: "none" }}>
                 Clear Filters
               </Button>
             )}
             <Box sx={{ flex: 1 }} />
             <Typography variant="caption" color="text.secondary">
-              {filtered.length} of {data?.total ?? 0} drivers
+              {drivers.length} of {data?.total ?? 0} drivers
             </Typography>
           </Stack>
         </CardContent>
@@ -1578,7 +1577,7 @@ export default function DriversPage() {
                     ))}
                   </TableRow>
                 ))
-              ) : filtered.length === 0 ? (
+              ) : drivers.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7}>
                     <Box sx={{ py: 8, textAlign: "center" }}>
@@ -1597,7 +1596,7 @@ export default function DriversPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map(driver => (
+                drivers.map(driver => (
                   <TableRow key={driver.id} hover
                     sx={{ cursor: "pointer", "&:hover": { bgcolor: "rgba(102,126,234,0.04)" } }}
                     onClick={() => setSelectedId(driver.id)}>
