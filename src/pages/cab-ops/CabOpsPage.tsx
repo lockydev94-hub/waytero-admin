@@ -120,7 +120,7 @@ function QueueTab() {
                 <TableCell sx={{ fontWeight: 700 }}>Booking</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Customer</TableCell>
                 <TableCell sx={{ fontWeight: 700, display: { xs: "none", md: "table-cell" } }}>City · Trip</TableCell>
-                <TableCell sx={{ fontWeight: 700, display: { xs: "none", sm: "table-cell" } }}>Pending Partner</TableCell>
+                <TableCell sx={{ fontWeight: 700, display: { xs: "none", sm: "table-cell" } }}>Offered To</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Deadline</TableCell>
                 <TableCell sx={{ fontWeight: 700 }} align="right">Actions</TableCell>
               </TableRow>
@@ -160,10 +160,39 @@ function QueueTab() {
                       <Typography variant="caption" color="text.secondary">{it.vehicle_category_label ?? "—"}</Typography>
                     </TableCell>
                     <TableCell sx={{ display: { xs: "none", sm: "table-cell" } }}>
-                      <Typography variant="body2">{it.pending_partner_name ?? "—"}</Typography>
-                      <Typography variant="caption" color="text.disabled" sx={{ fontFamily: "monospace" }}>
-                        {it.pending_partner_code ?? ""}
-                      </Typography>
+                      {it.open_offers > 0 ? (
+                        <>
+                          <Typography variant="body2" fontWeight={600}>
+                            {it.open_offers} partner{it.open_offers !== 1 ? "s" : ""} asked
+                          </Typography>
+                          <Tooltip title={it.offered_partner_names ?? ""}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              noWrap
+                              sx={{ display: "block", maxWidth: 180 }}
+                            >
+                              {it.offered_partner_names ?? "—"}
+                            </Typography>
+                          </Tooltip>
+                        </>
+                      ) : (
+                        <>
+                          <Typography variant="body2">{it.pending_partner_name ?? "—"}</Typography>
+                          <Typography variant="caption" color="text.disabled" sx={{ fontFamily: "monospace" }}>
+                            {it.pending_partner_code ?? ""}
+                          </Typography>
+                        </>
+                      )}
+                      {it.needs_attention && (
+                        <Chip
+                          label={it.needs_attention.replace(/_/g, " ").toLowerCase()}
+                          size="small"
+                          color="warning"
+                          icon={<WarningAmber sx={{ fontSize: 12 }} />}
+                          sx={{ mt: 0.5, height: 20, fontSize: 10, fontWeight: 700 }}
+                        />
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip label={dl.label} size="small" color={dl.color} sx={{ fontWeight: 700 }} />

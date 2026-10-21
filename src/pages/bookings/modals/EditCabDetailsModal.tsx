@@ -1,27 +1,32 @@
 // ============================================================
 // WAYTERO ADMIN — EDIT CAB DETAILS MODAL
-// Endpoint: PATCH /admin/bookings/{bookingId}/cab/{cabId}/edit
-// Editable: pickup_location, drop_location, estimated_distance,
-//           estimated_amount, trip_type, vehicle_category_id
-// Guard (backend): blocked when status is STARTED or beyond
-// NOT editable: pickup_datetime (use RescheduleModal)
-//               assignment fields (partner/driver/vehicle)
-//               final_amount (use SetFinalAmountModal)
+// Endpoint: PUT /admin/customer-care/cab-booking/{cabBookingId}
+// The amended trip is re-measured and re-priced by the server; this
+// dialog sends places, trip type and category only — never a fare.
+// Editable: pickup/drop location, trip type, vehicle category, reason
+// Read-only: pickup/return time (use Reschedule), assignment, final amount
+// Guards (backend): trip not started, no collected money, coupon not re-valued
 // ============================================================
 import { useState, useEffect } from "react";
 import {
-  Dialog, DialogTitle, DialogContent, DialogActions,
+  Dialog, DialogTitle, DialogContent,
   Button, TextField, MenuItem, Typography, Box,
   CircularProgress, Stack, Avatar, Divider, Alert,
-  Chip, Grid, Paper, InputAdornment, alpha, LinearProgress,
+  Chip, Grid, Paper, alpha, LinearProgress,
 } from "@mui/material";
 import {
-  Edit, Close, LocationOn, Straighten, AttachMoney,
-  LocalTaxi, DirectionsCar, CheckCircle, Info, Warning,
+  Edit, Close, LocationOn, LocalTaxi, DirectionsCar,
+  CheckCircle, Info, Warning, EventRepeat,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
-import { bookingService, CabBookingOut, VehicleCategoryOption } from "../../../services/booking.service";
+import {
+  bookingService, CabBookingOut, VehicleCategoryOption,
+} from "../../../services/booking.service";
+import {
+  customerCareService, CabBookingAmendPayload, CabBookingAmendResult,
+} from "../../../services/customerCare.service";
+import { apiErrorMessage } from "../../../utils/apiError";
 
 // ── Constants ──────────────────────────────────────────────────
 
@@ -33,18 +38,26 @@ const TRIP_TYPES = [
   { value: "ROUND_TRIP", label: "Round Trip",        desc: "Return trip included" },
 ];
 
-// Statuses that allow editing
-const EDITABLE_STATUSES = new Set(["PENDING_ASSIGNMENT", "ASSIGNED", "DRIVER_ASSIGNED"]);
+// The amendment endpoint re-quotes the trip and closes unaccepted offers, so it
+// only accepts these two states. Once a partner has accepted, the job is a
+// commitment: changes go through cancel / re-assign.
+const EDITABLE_STATUSES = new Set(["PENDING_ASSIGNMENT", "PENDING_PARTNER_ACCEPTANCE"]);
 
 // ── Status badge helper ────────────────────────────────────────
 
-function statusColor(s: string): "warning" | "primary" | "secondary" | "error" | "default" {
+function statusColor(s: string): "warning" | "primary" | "info" | "error" | "default" {
   if (s === "PENDING_ASSIGNMENT") return "warning";
-  if (s === "ASSIGNED") return "primary";
-  if (s === "DRIVER_ASSIGNED") return "secondary";
+  if (s === "PENDING_PARTNER_ACCEPTANCE") return "info";
+  if (s === "ASSIGNED" || s === "DRIVER_ASSIGNED") return "primary";
   if (s === "BREAKDOWN_REPORTED" || s === "AWAITING_SWAP") return "error";
   return "default";
 }
+
+// Decimal money arrives as JSON strings; coerce before formatting or math.
+const num = (v: number | string | null | undefined): number => Number(v ?? 0);
+
+const fmt = (v: number | string | null | undefined) =>
+  `₹${num(v).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // ── Field Row wrapper ──────────────────────────────────────────
 
@@ -73,31 +86,33 @@ interface Props {
   bookingId: number;
   cabId: number;
   cab: CabBookingOut;
+  /** The master booking's city; a super admin's amendment needs it. */
+  cityId: number;
 }
 
 // ── Main Modal ─────────────────────────────────────────────────
 
-export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, cab }: Props) {
+export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, cab, cityId }: Props) {
   const qc = useQueryClient();
   const { enqueueSnackbar } = useSnackbar();
 
   // ── Form state — initialised from current cab ──────────────
   const [pickupLocation, setPickupLocation]   = useState("");
   const [dropLocation, setDropLocation]       = useState("");
-  const [estimatedDistance, setEstimatedDistance] = useState("");
-  const [estimatedAmount, setEstimatedAmount] = useState("");
   const [tripType, setTripType]               = useState("");
   const [vehicleCategoryId, setVehicleCategoryId] = useState<number | "">("");
+  const [reason, setReason]                   = useState("");
+  const [result, setResult]                   = useState<CabBookingAmendResult | null>(null);
 
   // Populate on open
   useEffect(() => {
     if (open) {
       setPickupLocation(cab.pickup_location || "");
       setDropLocation(cab.drop_location || "");
-      setEstimatedDistance(cab.estimated_distance != null ? String(cab.estimated_distance) : "");
-      setEstimatedAmount(cab.estimated_amount != null ? String(cab.estimated_amount) : "");
       setTripType(cab.trip_type || "");
       setVehicleCategoryId(cab.vehicle_category_id ?? "");
+      setReason("");
+      setResult(null);
     }
   }, [open, cab]);
 
@@ -110,57 +125,65 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
   });
 
   // ── Edit allowed? ──────────────────────────────────────────
-  const canEdit = EDITABLE_STATUSES.has(cab.booking_status);
+  const canEdit =
+    EDITABLE_STATUSES.has(cab.booking_status) && !!cab.pickup_datetime;
 
   // ── Dirty detection ────────────────────────────────────────
   const isDirty =
-    pickupLocation !== (cab.pickup_location || "") ||
-    dropLocation   !== (cab.drop_location || "") ||
-    estimatedDistance !== (cab.estimated_distance != null ? String(cab.estimated_distance) : "") ||
-    estimatedAmount   !== (cab.estimated_amount != null ? String(cab.estimated_amount) : "") ||
+    pickupLocation.trim() !== (cab.pickup_location || "") ||
+    dropLocation.trim()   !== (cab.drop_location || "") ||
     tripType !== (cab.trip_type || "") ||
     vehicleCategoryId !== (cab.vehicle_category_id ?? "");
 
-  // ── Changed field summary for preview ─────────────────────
+  // ── Changed field summary ─────────────────────────────────
   const changedFields: string[] = [];
-  if (pickupLocation !== (cab.pickup_location || "")) changedFields.push("Pickup Location");
-  if (dropLocation   !== (cab.drop_location || ""))   changedFields.push("Drop Location");
-  if (estimatedDistance !== (cab.estimated_distance != null ? String(cab.estimated_distance) : "")) changedFields.push("Est. Distance");
-  if (estimatedAmount   !== (cab.estimated_amount != null ? String(cab.estimated_amount) : ""))     changedFields.push("Est. Amount");
+  if (pickupLocation.trim() !== (cab.pickup_location || "")) changedFields.push("Pickup Location");
+  if (dropLocation.trim()   !== (cab.drop_location || ""))   changedFields.push("Drop Location");
   if (tripType !== (cab.trip_type || "")) changedFields.push("Trip Type");
   if (vehicleCategoryId !== (cab.vehicle_category_id ?? "")) changedFields.push("Vehicle Category");
 
   // ── Mutation ───────────────────────────────────────────────
   const mutation = useMutation({
     mutationFn: () => {
-      const payload: Record<string, unknown> = {};
-      if (pickupLocation !== (cab.pickup_location || ""))
-        payload.pickup_location = pickupLocation.trim();
-      if (dropLocation !== (cab.drop_location || ""))
-        payload.drop_location = dropLocation.trim();
-      if (estimatedDistance !== (cab.estimated_distance != null ? String(cab.estimated_distance) : ""))
-        payload.estimated_distance = estimatedDistance ? Number(estimatedDistance) : undefined;
-      if (estimatedAmount !== (cab.estimated_amount != null ? String(cab.estimated_amount) : ""))
-        payload.estimated_amount = estimatedAmount ? Number(estimatedAmount) : undefined;
-      if (tripType !== (cab.trip_type || ""))
-        payload.trip_type = tripType || undefined;
-      if (vehicleCategoryId !== (cab.vehicle_category_id ?? ""))
-        payload.vehicle_category_id = vehicleCategoryId !== "" ? vehicleCategoryId : undefined;
-      return bookingService.editCabDetails(bookingId, cabId, payload as any);
+      // An edited place no longer matches the pin it used to carry, so the old
+      // coordinates are cleared rather than pointing the driver at the previous
+      // address. Untouched places keep their pins.
+      const pickupChanged = pickupLocation.trim() !== (cab.pickup_location || "");
+      const dropChanged   = dropLocation.trim()   !== (cab.drop_location || "");
+
+      const payload: CabBookingAmendPayload = {
+        city_id: cityId,
+        trip_type: tripType,
+        vehicle_category_id: Number(vehicleCategoryId),
+        pickup_location: pickupLocation.trim(),
+        pickup_latitude:  pickupChanged ? null : cab.pickup_latitude ?? null,
+        pickup_longitude: pickupChanged ? null : cab.pickup_longitude ?? null,
+        drop_location: dropLocation.trim(),
+        drop_latitude:  dropChanged ? null : cab.drop_latitude ?? null,
+        drop_longitude: dropChanged ? null : cab.drop_longitude ?? null,
+        pickup_datetime: cab.pickup_datetime as string,
+        return_datetime: cab.return_datetime ?? null,
+        reason: reason.trim() || undefined,
+      };
+      return customerCareService.amendCabBooking(cabId, payload);
     },
-    onSuccess: (data: any) => {
+    onSuccess: (data) => {
+      setResult(data);
       enqueueSnackbar(
-        `Cab details updated · ${data.changes?.length ?? 0} change(s) saved`,
-        { variant: "success" }
+        `Trip re-priced · ${fmt(data.old_amount)} → ${fmt(data.estimated_amount)}`,
+        { variant: "success" },
       );
       qc.invalidateQueries({ queryKey: ["admin-booking", bookingId] });
-      onClose();
+      qc.invalidateQueries({ queryKey: ["cab-ops-queue"] });
     },
     onError: (e: any) =>
-      enqueueSnackbar(e?.response?.data?.detail || "Update failed", { variant: "error" }),
+      enqueueSnackbar(apiErrorMessage(e, "Amendment failed"), { variant: "error" }),
   });
 
   const handleClose = () => { if (!mutation.isPending) onClose(); };
+  const formLocked = !canEdit || mutation.isPending || !!result;
+  const canSubmit =
+    !formLocked && isDirty && !!tripType && vehicleCategoryId !== "";
 
   return (
     <Dialog
@@ -194,7 +217,7 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
             </Avatar>
             <Box>
               <Typography variant="h6" fontWeight={800} sx={{ lineHeight: 1.2 }}>
-                Edit Cab Details
+                Amend Cab Trip
               </Typography>
               <Stack direction="row" alignItems="center" gap={1} mt={0.3}>
                 <Typography variant="caption" color="text.secondary" fontWeight={600}>
@@ -226,31 +249,98 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
       <DialogContent sx={{ p: 2.5, flex: 1, overflowY: "auto" }}>
         <Stack gap={3}>
 
-          {/* Guard alert when editing is blocked */}
+          {/* Guard alert when amending is blocked */}
           {!canEdit && (
             <Alert severity="error" icon={<Warning />} sx={{ borderRadius: 2 }}>
               <Typography variant="body2" fontWeight={600}>
-                Editing not allowed
+                {!cab.pickup_datetime
+                  ? "This trip has no pickup time on record"
+                  : "Amendment not allowed at this stage"}
               </Typography>
               <Typography variant="caption">
-                Cab details cannot be changed once the trip has started (status:{" "}
-                <strong>{cab.booking_status}</strong>).
+                {!cab.pickup_datetime
+                  ? "Set the pickup time with Reschedule first; the amended trip is priced on it."
+                  : `A trip can be amended only while it is waiting for a partner — this one is ${cab.booking_status.replace(/_/g, " ")}. After a partner accepts, use cancel / re-assign; after the trip runs, use close-trip and add-charges.`}
               </Typography>
             </Alert>
           )}
 
-          {/* Info: what is NOT editable here */}
+          {/* What the server decides, and what is not editable here */}
           <Alert
             severity="info"
             icon={<Info fontSize="small" />}
             sx={{ borderRadius: 2, py: 0.75 }}
           >
             <Typography variant="caption">
-              <strong>Pickup date/time</strong> → use <em>Reschedule</em>. &nbsp;
-              <strong>Final amount</strong> → use <em>Set Final Amount</em>. &nbsp;
+              The amended trip is <strong>measured and priced by the server</strong> — no fare is
+              typed here. <strong>Pickup/return time</strong> → use <em>Reschedule</em>.{" "}
               <strong>Assignment</strong> → use <em>Assign Driver</em>.
             </Typography>
           </Alert>
+
+          {/* Amendment result */}
+          {result && (
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5, borderRadius: 2.5,
+                border: "1.5px solid",
+                borderColor: "success.main",
+                background: (t) => alpha(t.palette.success.main, 0.05),
+              }}
+            >
+              <Stack direction="row" alignItems="center" gap={1} mb={1.5}>
+                <CheckCircle sx={{ fontSize: 18, color: "success.main" }} />
+                <Typography variant="body2" fontWeight={800} color="success.dark">
+                  Trip amended and re-priced
+                </Typography>
+              </Stack>
+              <Stack gap={0.75}>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="caption" color="text.secondary">Old fare</Typography>
+                  <Typography variant="caption" sx={{ textDecoration: "line-through" }}>
+                    {fmt(result.old_amount)}
+                  </Typography>
+                </Stack>
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="caption" color="text.secondary">New fare</Typography>
+                  <Typography variant="caption" fontWeight={800}>{fmt(result.estimated_amount)}</Typography>
+                </Stack>
+                {num(result.coupon_discount) > 0 && (
+                  <Stack direction="row" justifyContent="space-between">
+                    <Typography variant="caption" color="text.secondary">Coupon (kept as booked)</Typography>
+                    <Typography variant="caption" fontWeight={700} color="warning.main">
+                      − {fmt(result.coupon_discount)}
+                    </Typography>
+                  </Stack>
+                )}
+                <Divider sx={{ my: 0.5 }} />
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="body2" fontWeight={800}>Customer pays</Typography>
+                  <Typography variant="body2" fontWeight={900} color="success.main">
+                    {fmt(result.payable_amount)}
+                  </Typography>
+                </Stack>
+                <Typography variant="caption" color="text.secondary">
+                  {num(result.distance_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km ·{" "}
+                  {result.distance_source.replace(/_/g, " ").toLowerCase()}
+                </Typography>
+              </Stack>
+              {result.re_offered && (
+                <Alert severity="warning" sx={{ mt: 1.5, borderRadius: 2 }}>
+                  The open offers were for the old trip, so they were closed. The booking is back
+                  in the assignment queue for a partner to be offered the amended fare.
+                </Alert>
+              )}
+              {result.notes?.length > 0 && (
+                <Alert severity="info" sx={{ mt: 1.5, borderRadius: 2 }}>
+                  {result.notes.map((n, i) => (
+                    <Typography key={i} variant="caption" display="block">{n}</Typography>
+                  ))}
+                </Alert>
+              )}
+            </Paper>
+          )}
 
           {/* ── Locations ──────────────────────────────────── */}
           <FieldSection icon={<LocationOn sx={{ fontSize: 16 }} />} label="Locations">
@@ -262,16 +352,9 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
                 fullWidth
                 multiline
                 minRows={2}
-                disabled={!canEdit || mutation.isPending}
+                required
+                disabled={formLocked}
                 placeholder="e.g. Bhubaneswar Airport, Odisha"
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <LocationOn sx={{ color: "success.main", fontSize: 18 }} />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ "& .MuiInputAdornment-root": { alignSelf: "flex-start", mt: 1.5 } }}
               />
               <TextField
                 label="Drop Location"
@@ -280,16 +363,9 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
                 fullWidth
                 multiline
                 minRows={2}
-                disabled={!canEdit || mutation.isPending}
+                required
+                disabled={formLocked}
                 placeholder="e.g. Puri Beach, Odisha"
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <LocationOn sx={{ color: "error.main", fontSize: 18 }} />
-                    </InputAdornment>
-                  ),
-                }}
-                sx={{ "& .MuiInputAdornment-root": { alignSelf: "flex-start", mt: 1.5 } }}
               />
             </Stack>
           </FieldSection>
@@ -306,9 +382,9 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
                   value={tripType}
                   onChange={(e) => setTripType(e.target.value)}
                   fullWidth
-                  disabled={!canEdit || mutation.isPending}
+                  required
+                  disabled={formLocked}
                 >
-                  <MenuItem value=""><em>— Not Set —</em></MenuItem>
                   {TRIP_TYPES.map((t) => (
                     <MenuItem key={t.value} value={t.value}>
                       <Box>
@@ -326,10 +402,10 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
                   value={vehicleCategoryId}
                   onChange={(e) => setVehicleCategoryId(e.target.value as number | "")}
                   fullWidth
-                  disabled={!canEdit || mutation.isPending || loadingCats}
+                  required
+                  disabled={formLocked || loadingCats}
                   helperText={loadingCats ? "Loading categories…" : undefined}
                 >
-                  <MenuItem value=""><em>— Not Set —</em></MenuItem>
                   {categories.map((c) => (
                     <MenuItem key={c.id} value={c.id}>
                       <Stack direction="row" alignItems="center" gap={1}>
@@ -352,54 +428,54 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
 
           <Divider />
 
-          {/* ── Distance & Amount ──────────────────────────── */}
-          <FieldSection icon={<Straighten sx={{ fontSize: 16 }} />} label="Distance & Estimated Amount">
+          {/* ── Times on record ────────────────────────────── */}
+          <FieldSection icon={<EventRepeat sx={{ fontSize: 16 }} />} label="Times on Record">
             <Grid container spacing={2}>
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="Estimated Distance"
-                  value={estimatedDistance}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "" || /^\d*\.?\d{0,2}$/.test(v)) setEstimatedDistance(v);
-                  }}
+                  label="Pickup"
+                  value={cab.pickup_datetime
+                    ? new Date(cab.pickup_datetime).toLocaleString("en-IN")
+                    : "—"}
                   fullWidth
-                  disabled={!canEdit || mutation.isPending}
-                  inputProps={{ inputMode: "decimal" }}
-                  InputProps={{
-                    endAdornment: <InputAdornment position="end">km</InputAdornment>,
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <Straighten sx={{ fontSize: 16, color: "text.secondary" }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  helperText="Approximate route distance"
+                  disabled
+                  helperText="Moving the pickup → Reschedule"
                 />
               </Grid>
               <Grid item xs={12} sm={6}>
                 <TextField
-                  label="Estimated Amount"
-                  value={estimatedAmount}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    if (v === "" || /^\d*\.?\d{0,2}$/.test(v)) setEstimatedAmount(v);
-                  }}
+                  label="Return"
+                  value={cab.return_datetime
+                    ? new Date(cab.return_datetime).toLocaleString("en-IN")
+                    : "Not a return trip"}
                   fullWidth
-                  disabled={!canEdit || mutation.isPending}
-                  inputProps={{ inputMode: "decimal" }}
-                  InputProps={{
-                    startAdornment: <InputAdornment position="start">₹</InputAdornment>,
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <AttachMoney sx={{ fontSize: 16, color: "text.secondary" }} />
-                      </InputAdornment>
-                    ),
-                  }}
-                  helperText="Customer-facing estimate (not final)"
+                  disabled
+                  helperText="Kept exactly as booked"
                 />
               </Grid>
             </Grid>
+            <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+              The amended trip is re-measured and re-priced on these times; changing them goes
+              through Reschedule, before or after this amendment.
+            </Typography>
+          </FieldSection>
+
+          <Divider />
+
+          {/* ── Reason ─────────────────────────────────────── */}
+          <FieldSection icon={<CheckCircle sx={{ fontSize: 16 }} />} label="Reason for Change">
+            <TextField
+              label="Reason (optional)"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              fullWidth
+              multiline
+              minRows={2}
+              disabled={formLocked}
+              placeholder="e.g. Customer changed the drop to the hotel gate"
+              inputProps={{ maxLength: 500 }}
+              helperText="Written to the booking audit trail next to the old and new fare."
+            />
           </FieldSection>
 
           {/* ── Change Summary Preview ─────────────────────── */}
@@ -433,7 +509,10 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
                 ))}
               </Stack>
               <Typography variant="caption" color="text.secondary" display="block" mt={1}>
-                A timeline entry will be created for each change.
+                Saving re-prices the trip on the server. If the new trip differs materially and no
+                partner has accepted yet, the outstanding offers are closed and the booking is
+                re-offered. A booked coupon is kept as-is — if it no longer covers the new fare,
+                the amendment is refused.
               </Typography>
             </Paper>
           )}
@@ -451,36 +530,52 @@ export default function EditCabDetailsModal({ open, onClose, bookingId, cabId, c
       >
         <Stack direction="row" justifyContent="space-between" alignItems="center">
           <Typography variant="caption" color="text.secondary">
-            {!canEdit
-              ? "Editing blocked for current status"
+            {result
+              ? "Amendment saved — the timeline has the entry"
+              : !canEdit
+              ? "Amendment blocked for the current stage"
               : !isDirty
               ? "No changes made"
               : `${changedFields.length} field${changedFields.length !== 1 ? "s" : ""} modified`}
           </Typography>
           <Stack direction="row" gap={1}>
-            <Button
-              onClick={handleClose}
-              variant="outlined"
-              color="inherit"
-              disabled={mutation.isPending}
-              sx={{ borderRadius: 2 }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              color="warning"
-              disabled={!canEdit || !isDirty || mutation.isPending}
-              onClick={() => mutation.mutate()}
-              startIcon={
-                mutation.isPending
-                  ? <CircularProgress size={16} color="inherit" />
-                  : <CheckCircle />
-              }
-              sx={{ borderRadius: 2, px: 3, fontWeight: 700 }}
-            >
-              {mutation.isPending ? "Saving…" : "Save Changes"}
-            </Button>
+            {result ? (
+              <Button
+                variant="contained"
+                color="success"
+                onClick={onClose}
+                startIcon={<CheckCircle />}
+                sx={{ borderRadius: 2, px: 3, fontWeight: 700 }}
+              >
+                Done
+              </Button>
+            ) : (
+              <>
+                <Button
+                  onClick={handleClose}
+                  variant="outlined"
+                  color="inherit"
+                  disabled={mutation.isPending}
+                  sx={{ borderRadius: 2 }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="contained"
+                  color="warning"
+                  disabled={!canSubmit}
+                  onClick={() => mutation.mutate()}
+                  startIcon={
+                    mutation.isPending
+                      ? <CircularProgress size={16} color="inherit" />
+                      : <CheckCircle />
+                  }
+                  sx={{ borderRadius: 2, px: 3, fontWeight: 700 }}
+                >
+                  {mutation.isPending ? "Re-pricing…" : "Save Amendment"}
+                </Button>
+              </>
+            )}
           </Stack>
         </Stack>
       </Box>

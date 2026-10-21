@@ -17,6 +17,7 @@ import {
   Warning, CheckCircleOutline, Lock,
 } from "@mui/icons-material";
 import { tripAssistanceService, TripDetail } from "../../../services/tripAssistance.service";
+import { apiErrorMessage } from "../../../utils/apiError";
 
 interface Props {
   open: boolean;
@@ -36,8 +37,9 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
   const theme = useTheme();
   const [mode,          setMode]          = useState<"CASH" | "WALLET">("CASH");
   const [collector,     setCollector]     = useState("DRIVER");
-  const [commPct,       setCommPct]       = useState(10);
-  const [commSource,    setCommSource]    = useState("default");
+  const [commType,      setCommType]      = useState<"PERCENTAGE" | "FLAT">("PERCENTAGE");
+  const [commValue,     setCommValue]     = useState(10);
+  const [commSource,    setCommSource]    = useState("default_10pct");
   const [commLoading,   setCommLoading]   = useState(false);
   const [walletBalance,   setWalletBalance]   = useState<number | null>(null);
   const [walletLoading,   setWalletLoading]   = useState(false);
@@ -49,19 +51,31 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
   const finalAmt   = detail.final_amount ?? 0;
   const couponDisc = detail.coupon_discount ?? 0;
   const advancePd  = detail.advance_paid ?? 0;
-  const balanceDue = Math.max(0, +(finalAmt - couponDisc - advancePd).toFixed(2));
+  // The server computes the collectable figure — coupon, advance and (for a
+  // tax invoice) GST included — so the desk shows the number the wallet is
+  // actually debited by. A local fare−coupon−advance sum drifted from it.
+  const balanceDue = Math.max(0, detail.balance_due ?? 0);
+  const gstAmt     = detail.is_tax_invoice ? detail.gst_amount ?? 0 : 0;
 
-  // Commission is informational only at this stage (settlement-time deduction)
-  const commission    = +(finalAmt * commPct / 100).toFixed(2);
+  // Commission is informational only at this stage (settlement-time deduction).
+  // A FLAT rule charges its amount; only a PERCENTAGE rule scales with the fare.
+  const commission =
+    commType === "FLAT"
+      ? +commValue.toFixed(2)
+      : +(finalAmt * commValue / 100).toFixed(2);
   const partnerPayout = +(finalAmt - commission).toFixed(2);
 
-  // Auto-fetch commission percent when modal opens
+  // Auto-fetch the commission rule when modal opens
   useEffect(() => {
     if (!open) return;
     setCommLoading(true);
     tripAssistanceService.getCommissionPreview(detail.cab_booking_number)
-      .then(res => { setCommPct(res.commission_percent); setCommSource(res.rule_source); })
-      .catch(() => { setCommPct(10); setCommSource("default"); })
+      .then(res => {
+        setCommType(res.commission_type);
+        setCommValue(res.commission_value);
+        setCommSource(res.rule_source);
+      })
+      .catch(() => { setCommType("PERCENTAGE"); setCommValue(10); setCommSource("default_10pct"); })
       .finally(() => setCommLoading(false));
   }, [open, detail.cab_booking_number]);
 
@@ -108,7 +122,7 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
       onSuccess();
       handleClose();
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Failed to record payment.");
+      setError(apiErrorMessage(e, "Failed to record payment."));
     } finally { setLoading(false); }
   }
 
@@ -166,7 +180,13 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
                   <Typography variant="caption" fontWeight={700} color="info.main">− {fmtINR(advancePd)}</Typography>
                 </Stack>
               )}
-              {(couponDisc > 0 || advancePd > 0) && <Divider sx={{ my: 0.5 }} />}
+              {gstAmt > 0 && (
+                <Stack direction="row" justifyContent="space-between">
+                  <Typography variant="caption" color="text.secondary">GST ({detail.gst_rate}%)</Typography>
+                  <Typography variant="caption" fontWeight={700} color="text.secondary">+ {fmtINR(gstAmt)}</Typography>
+                </Stack>
+              )}
+              {(couponDisc > 0 || advancePd > 0 || gstAmt > 0) && <Divider sx={{ my: 0.5 }} />}
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ letterSpacing: 0.8, textTransform: "uppercase" }}>
                   Balance Due
@@ -249,9 +269,17 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
               <Stack direction="row" spacing={0.5} alignItems="center">
                 <Lock sx={{ fontSize: 13, color: "text.disabled" }} />
                 <Chip
-                  label={commSource === "default" ? "Default Rule" : commSource.startsWith("city") ? "City Rule" : "Group Rule"}
+                  label={
+                    commSource === "default_10pct"
+                      ? "Default 10%"
+                      : commSource === "city"
+                      ? "City Rule"
+                      : commSource === "platform-wide"
+                      ? "Platform Rule"
+                      : commSource
+                  }
                   size="small"
-                  color={commSource === "default" ? "default" : "primary"}
+                  color={commSource === "default_10pct" ? "default" : "primary"}
                   variant="outlined"
                   icon={<CheckCircleOutline sx={{ fontSize: "14px !important" }} />}
                   sx={{ fontWeight: 700, height: 20, fontSize: "0.62rem" }}
@@ -264,7 +292,9 @@ export default function CollectPaymentModal({ open, detail, onClose, onSuccess }
                 <Typography variant="body2" fontWeight={700}>{fmtINR(finalAmt)}</Typography>
               </Stack>
               <Stack direction="row" justifyContent="space-between">
-                <Typography variant="body2" color="text.secondary">Commission ({commPct}%)</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {commType === "FLAT" ? "Commission (flat)" : `Commission (${commValue}%)`}
+                </Typography>
                 <Typography variant="body2" fontWeight={700} color="warning.main">− {fmtINR(commission)}</Typography>
               </Stack>
               <Divider sx={{ my: 0.25 }} />

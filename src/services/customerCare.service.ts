@@ -116,9 +116,59 @@ export interface CabBookingMeta {
   cities: { id: number; name: string }[];
 }
 
+// Money on the cab quote/create/amend endpoints leaves the backend as Decimal,
+// which FastAPI serialises as a JSON string ("1234.50") so nothing is rounded on
+// the way to a customer. Coerce with Number() before arithmetic.
+export type DecimalValue = number | string;
+
+export interface CabBookingQuotePayload {
+  city_id?: number | null;
+  destination_city_id?: number | null;
+  vehicle_category_id: number;
+  trip_type: string;
+  pickup_location: string;
+  drop_location: string;
+  pickup_datetime: string; // ISO
+  return_datetime?: string | null;
+  waiting_minutes?: number | null;
+  customer_id?: number | null;
+}
+
+export interface CabQuoteCoupon {
+  coupon_id: number;
+  coupon_code: string;
+  title: string;
+  discount_amount: DecimalValue;
+  final_amount: DecimalValue;
+  coupon_type: string;
+  partner_funded: boolean;
+}
+
+export interface CabBookingQuote {
+  city_id: number;
+  pricing_city_id: number | null;
+  vehicle_category_id: number;
+  trip_type: string;
+  distance_km: DecimalValue;
+  distance_source: string; // GOOGLE | CONFIGURED_ROUTE | HAVERSINE
+  billable_km: DecimalValue;
+  route_id: number | null;
+  toll_configured: boolean;
+  base_fare: DecimalValue;
+  distance_charge: DecimalValue;
+  driver_allowance: DecimalValue;
+  night_charge: DecimalValue;
+  toll: DecimalValue;
+  waiting: DecimalValue;
+  total: DecimalValue;
+  notes: string[];
+  coupons: CabQuoteCoupon[];
+}
+
 export interface CabBookingCreatePayload {
   customer_id: number;
-  city_id: number;
+  city_id?: number | null;
+  destination_city_id?: number | null;
   trip_type: string;
   vehicle_category_id: number;
   pickup_location: string;
@@ -128,8 +178,61 @@ export interface CabBookingCreatePayload {
   drop_latitude?: number | null;
   drop_longitude?: number | null;
   pickup_datetime: string; // ISO
-  estimated_distance?: number | null;
+  return_datetime?: string | null;
+  waiting_minutes?: number | null;
+  coupon_code?: string | null;
   remarks?: string;
+}
+
+export interface CabBookingCreateResult {
+  success: boolean;
+  master_booking_id: number;
+  booking_number: string;
+  cab_booking_id: number;
+  cab_booking_number: string;
+  distance_km: DecimalValue;
+  distance_source: string;
+  billable_km: DecimalValue;
+  estimated_amount: DecimalValue;
+  coupon_discount: DecimalValue;
+  payable_amount: DecimalValue;
+  notes: string[];
+  message: string;
+}
+
+export interface CabBookingAmendPayload {
+  city_id?: number | null;
+  destination_city_id?: number | null;
+  trip_type: string;
+  vehicle_category_id: number;
+  pickup_location: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  drop_location: string;
+  drop_latitude?: number | null;
+  drop_longitude?: number | null;
+  pickup_datetime: string; // ISO
+  return_datetime?: string | null;
+  waiting_minutes?: number | null;
+  reason?: string;
+}
+
+export interface CabBookingAmendResult {
+  success: boolean;
+  master_booking_id: number;
+  booking_number: string;
+  cab_booking_id: number;
+  cab_booking_number: string;
+  distance_km: DecimalValue;
+  distance_source: string;
+  billable_km: DecimalValue;
+  old_amount: DecimalValue;
+  estimated_amount: DecimalValue;
+  coupon_discount: DecimalValue;
+  payable_amount: DecimalValue;
+  re_offered: boolean;
+  notes: string[];
+  message: string;
 }
 
 export interface CareStats {
@@ -329,9 +432,17 @@ export const customerCareService = {
   getCabMeta: (cityId?: number): Promise<CabBookingMeta> =>
     apiClient.get(`${BASE}/cab-booking/meta`, { params: cityId ? { city_id: cityId } : undefined }).then(r => r.data),
 
-  // Create cab booking
-  createCabBooking: (payload: CabBookingCreatePayload) =>
+  // Server-side fare quote — the only source of cab pricing the desk shows
+  quoteCabBooking: (payload: CabBookingQuotePayload): Promise<CabBookingQuote> =>
+    apiClient.post(`${BASE}/cab-booking/quote`, payload).then(r => r.data),
+
+  // Create cab booking (price computed by the same server call as the quote)
+  createCabBooking: (payload: CabBookingCreatePayload): Promise<CabBookingCreateResult> =>
     apiClient.post(`${BASE}/cab-booking`, payload).then(r => r.data),
+
+  // Amend a booked trip — re-quoted server-side; offers may be re-fanned
+  amendCabBooking: (cabBookingId: number, payload: CabBookingAmendPayload): Promise<CabBookingAmendResult> =>
+    apiClient.put(`${BASE}/cab-booking/${cabBookingId}`, payload).then(r => r.data),
 
   // Hotel booking meta (active hotels + room categories)
   getHotelMeta: (cityId?: number): Promise<HotelBookingMeta> =>

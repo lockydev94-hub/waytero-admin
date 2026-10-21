@@ -4,9 +4,10 @@
 // Features:
 //   • Google Maps Places autocomplete (city-biased) when API key active
 //   • Map picker modal (click/drag/search on map) for pickup & drop
-//   • Distance Matrix auto-fill via Google Maps
-//   • Fallback to manual text input when Maps not configured
-//   • Dynamic fare estimate using effective pricing rules
+//   • Fare quoted by the backend (`/cab-booking/quote`) — kilometres,
+//     the price sheet in force on the trip day, night charge, toll and
+//     waiting are all the server's answer, never typed or mirrored here
+//   • Honest coupon suggestions from the same validator that redeems them
 // ============================================================
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -14,8 +15,8 @@ import {
   Box, Stack, Typography, Button, TextField, Select,
   MenuItem, FormControl, InputLabel, CircularProgress,
   Alert, Grid, Paper, Chip, Divider, Stepper, Step,
-  StepLabel, alpha, useTheme, IconButton, Tooltip,
-  Card, CardContent, Avatar, Badge,
+  StepLabel, alpha, useTheme, IconButton,
+  Card, CardContent, Avatar, Radio,
 } from "@mui/material";
 import {
   ArrowBack, DirectionsCar, CheckCircle, LocationOn,
@@ -28,7 +29,10 @@ import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFnsV3";
 import { format } from "date-fns";
 
-import { customerCareService, CabBookingMeta } from "../../services/customerCare.service";
+import {
+  customerCareService, CabBookingMeta, CabBookingQuote, CabBookingCreateResult,
+} from "../../services/customerCare.service";
+import { apiErrorMessage } from "../../utils/apiError";
 import { settingsService, ApiIntegration } from "../../services/settings.service";
 import LocationAutocomplete from "./components/LocationAutocomplete";
 import GoogleMapPickerModal, { PickedLocation } from "./components/GoogleMapPickerModal";
@@ -44,56 +48,18 @@ const TRIP_TYPES = [
 
 const STEPS = ["Trip Details", "Vehicle & Route", "Confirm & Book"];
 
-// ── Fare helper ───────────────────────────────────────────────
-// MIRRORS: Backend/app/modules/booking/services/fare.py — keep in sync.
-// Both sides agree on base + max(0, dist − min_km) × per_km_rate + driver_allowance
-// + night_charge (22:00–06:00 Asia/Kolkata).
-const NIGHT_START_HOUR = 22;
-const NIGHT_END_HOUR   = 6;
+// ── Fare helpers ──────────────────────────────────────────────
+// The backend returns Decimal money as JSON strings so nothing gets rounded in
+// transit; every figure below is coerced before arithmetic.
+const num = (v: number | string | null | undefined): number => Number(v ?? 0);
 
-interface PricingRule {
-  base_fare: number;
-  per_km_rate: number;
-  minimum_km: number;
-  driver_allowance: number;
-  night_charge: number;
-}
-
-function isNightTrip(startDt?: Date | null, endDt?: Date | null): boolean {
-  if (!startDt || !endDt) return false;
-  // Compare in the user's local time. The helper stays in sync with the
-  // backend by using hour-of-day checks only.
-  const startHour = startDt.getHours();
-  const endHour = endDt.getHours();
-  const inWindow = (h: number) =>
-    h >= NIGHT_START_HOUR || h < NIGHT_END_HOUR;
-  return inWindow(startHour) || inWindow(endHour);
-}
-
-function computeFareBreakdown(
-  rule: PricingRule,
-  distKm: number,
-  startDt?: Date | null,
-  endDt?: Date | null,
-): { base: number; distance: number; allowance: number; night: number; total: number } {
-  const safeKm = Math.max(0, distKm);
-  const extraKm = Math.max(0, safeKm - (rule.minimum_km ?? 0));
-  const base = rule.base_fare ?? 0;
-  const distance = extraKm * (rule.per_km_rate ?? 0);
-  const allowance = rule.driver_allowance ?? 0;
-  const night = isNightTrip(startDt, endDt) ? (rule.night_charge ?? 0) : 0;
-  const total = Math.round((base + distance + allowance + night) * 100) / 100;
-  return {
-    base,
-    distance: Math.round(distance * 100) / 100,
-    allowance,
-    night,
-    total,
-  };
-}
-
-function computeFare(rule: PricingRule, distKm: number, startDt?: Date | null, endDt?: Date | null): number {
-  return computeFareBreakdown(rule, distKm, startDt, endDt).total;
+function distanceSourceLabel(source: string): string {
+  switch (source) {
+    case "GOOGLE":           return "Google route";
+    case "CONFIGURED_ROUTE": return "Configured route";
+    case "HAVERSINE":        return "Straight-line estimate";
+    default:                 return source;
+  }
 }
 
 // Single line in the fare breakdown. Right-aligned value, muted label.
@@ -115,34 +81,6 @@ interface LocationState {
   lng: number | null;
 }
 const EMPTY_LOC: LocationState = { address: "", lat: null, lng: null };
-
-// ── Distance Matrix via Google Maps JS API ─────────────────────
-async function computeDrivingDistance(
-  origin: { lat: number; lng: number },
-  destination: { lat: number; lng: number }
-): Promise<number | null> {
-  return new Promise((resolve) => {
-    if (!window.google?.maps?.DistanceMatrixService) { resolve(null); return; }
-    const svc = new window.google.maps.DistanceMatrixService();
-    svc.getDistanceMatrix(
-      {
-        origins: [origin],
-        destinations: [destination],
-        travelMode: window.google.maps.TravelMode.DRIVING,
-        unitSystem: window.google.maps.UnitSystem.METRIC,
-      },
-      (response: any, status: string) => {
-        if (status !== "OK") { resolve(null); return; }
-        const elem = response?.rows?.[0]?.elements?.[0];
-        if (elem?.status === "OK" && elem?.distance?.value) {
-          resolve(Math.round(elem.distance.value / 100) / 10); // metres → km (1 dp)
-        } else {
-          resolve(null);
-        }
-      }
-    );
-  });
-}
 
 // ── Maps status type ──────────────────────────────────────────
 // "idle"    = not yet checked
@@ -208,14 +146,13 @@ export default function CabBookingPage() {
   const [metaLoading, setMetaLoading] = useState(true);
   const [submitting, setSubmitting]   = useState(false);
   const [error, setError]         = useState("");
-  const [success, setSuccess]     = useState<{ booking_number: string; estimated_amount: number } | null>(null);
+  const [success, setSuccess]     = useState<CabBookingCreateResult | null>(null);
 
   // ── Maps API
   const [mapsApiKey, setMapsApiKey] = useState<string>("");
   const [mapsStatus, setMapsStatus] = useState<MapsStatus>("idle");
-  // Derived helpers
-  const mapsOk      = mapsStatus === "ok";
-  const mapsLoading = mapsStatus === "loading";
+  // Derived helper
+  const mapsOk = mapsStatus === "ok";
 
   // ── Form — Step 1
   const [cityId,   setCityId]   = useState<number | "">("");
@@ -226,9 +163,12 @@ export default function CabBookingPage() {
   const [pickup,   setPickup]   = useState<LocationState>(EMPTY_LOC);
   const [drop,     setDrop]     = useState<LocationState>(EMPTY_LOC);
   const [pickupDt, setPickupDt] = useState<Date | null>(null);
-  const [distance, setDistance] = useState<string>("");
-  const [distanceAuto, setDistanceAuto] = useState(false); // true = auto-computed
-  const [distanceLoading, setDistanceLoading] = useState(false);
+  const [returnDt, setReturnDt] = useState<Date | null>(null);
+  const [quote, setQuote]       = useState<CabBookingQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError]     = useState("");
+  const [couponCode, setCouponCode]     = useState("");
+  const quoteSeq = useRef(0);
   const [remarks, setRemarks]   = useState("");
 
   // ── Modal
@@ -286,42 +226,54 @@ export default function CabBookingPage() {
     })();
   }, [cityId]);
 
-  // ── Auto-compute distance when both coords available ──────────
+  // ── Any change to the trip voids the quote ────────────────────
+  // A quote is the server's answer about a specific pair of places, a specific
+  // cab and a specific time. Editing any of them makes the number stale, so the
+  // panel goes blank rather than showing a fare for a trip nobody is booking.
   useEffect(() => {
-    if (!mapsOk || !pickup.lat || !pickup.lng || !drop.lat || !drop.lng) return;
-    (async () => {
-      setDistanceLoading(true);
-      try {
-        const km = await computeDrivingDistance(
-          { lat: pickup.lat!, lng: pickup.lng! },
-          { lat: drop.lat!, lng: drop.lng! }
-        );
-        if (km !== null) {
-          setDistance(String(km));
-          setDistanceAuto(true);
-        }
-      } catch {} finally { setDistanceLoading(false); }
-    })();
-  }, [mapsOk, pickup.lat, pickup.lng, drop.lat, drop.lng]);
+    quoteSeq.current += 1;
+    setQuote(null);
+    setQuoteError("");
+    setCouponCode("");
+  }, [cityId, tripType, vcatId, pickup.address, drop.address, pickupDt, returnDt]);
 
-  // ── Estimated amount ──────────────────────────────────────────
-  const estimatedAmount = (() => {
-    if (!meta || !vcatId || !tripType || !distance) return null;
-    const pricing = meta.pricing[String(vcatId)]?.[tripType];
-    if (!pricing) return null;
-    const actualDist = parseFloat(distance) || 0;
-    // MIRRORS backend calculate_fare — see fare.py.
-    return computeFare(pricing, actualDist, pickupDt, pickupDt);
-  })();
+  // ── Quote ─────────────────────────────────────────────────────
+  async function handleQuote() {
+    if (!step2Valid() || !pickupDt) return;
+    const seq = ++quoteSeq.current;
+    setQuoteLoading(true);
+    setQuoteError("");
+    try {
+      const q = await customerCareService.quoteCabBooking({
+        city_id: Number(cityId),
+        vehicle_category_id: Number(vcatId),
+        trip_type: tripType,
+        pickup_location: pickup.address.trim(),
+        drop_location: drop.address.trim(),
+        pickup_datetime: pickupDt.toISOString(),
+        return_datetime: tripType === "ROUND_TRIP" && returnDt ? returnDt.toISOString() : null,
+        customer_id: customerId ? parseInt(customerId, 10) : null,
+      });
+      if (seq === quoteSeq.current) setQuote(q);
+    } catch (e: any) {
+      if (seq === quoteSeq.current) setQuoteError(apiErrorMessage(e, "Could not quote this trip"));
+    } finally {
+      if (seq === quoteSeq.current) setQuoteLoading(false);
+    }
+  }
 
   const selectedVcat = meta?.vehicle_categories.find(v => v.id === vcatId);
   const selectedCity = meta?.cities.find(c => c.id === cityId);
   const selectedTrip = TRIP_TYPES.find(t => t.value === tripType);
 
+  const selectedCoupon = quote?.coupons.find(c => c.coupon_code === couponCode) ?? null;
+  const quoteTotal = quote ? num(quote.total) : null;
+  const payableAmount = selectedCoupon ? num(selectedCoupon.final_amount) : quoteTotal;
+
   // ── Step validation ───────────────────────────────────────────
   function step1Valid() { return cityId !== "" && tripType !== ""; }
   function step2Valid() {
-    return vcatId !== "" && pickup.address.trim() && drop.address.trim() && !!pickupDt;
+    return vcatId !== "" && !!pickup.address.trim() && !!drop.address.trim() && !!pickupDt;
   }
 
   // ── Map pick handlers ─────────────────────────────────────────
@@ -335,28 +287,29 @@ export default function CabBookingPage() {
 
   // ── Submit ────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!customerId || !cityId || !tripType || !vcatId || !pickup.address || !drop.address || !pickupDt) return;
+    if (!customerId || !cityId || !tripType || !vcatId || !pickup.address || !drop.address || !pickupDt || !quote) return;
     setSubmitting(true); setError("");
     try {
       const result = await customerCareService.createCabBooking({
-        customer_id: parseInt(customerId),
+        customer_id: parseInt(customerId, 10),
         city_id: Number(cityId),
         trip_type: tripType,
         vehicle_category_id: Number(vcatId),
-        pickup_location: pickup.address,
+        pickup_location: pickup.address.trim(),
         pickup_latitude:  pickup.lat   ?? undefined,
         pickup_longitude: pickup.lng   ?? undefined,
-        drop_location: drop.address,
+        drop_location: drop.address.trim(),
         drop_latitude:  drop.lat   ?? undefined,
         drop_longitude: drop.lng   ?? undefined,
         pickup_datetime: pickupDt.toISOString(),
-        estimated_distance: distance ? parseFloat(distance) : null,
+        return_datetime: tripType === "ROUND_TRIP" && returnDt ? returnDt.toISOString() : null,
+        coupon_code: selectedCoupon?.coupon_code ?? null,
         remarks: remarks || undefined,
       });
-      setSuccess({ booking_number: result.booking_number, estimated_amount: result.estimated_amount });
+      setSuccess(result);
       setStep(3);
     } catch (e: any) {
-      setError(e?.response?.data?.detail || "Failed to create booking");
+      setError(apiErrorMessage(e, "Failed to create booking"));
     } finally { setSubmitting(false); }
   }
 
@@ -387,7 +340,10 @@ export default function CabBookingPage() {
               ["Pickup", pickup.address],
               ["Drop", drop.address],
               ["Scheduled", pickupDt ? format(pickupDt, "dd MMM yyyy, hh:mm aa") : "—"],
-              estimatedAmount != null && ["Estimated Fare", <Typography fontWeight={700} color="success.main">₹{estimatedAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</Typography>],
+              ["Distance", `${num(success.distance_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km · ${distanceSourceLabel(success.distance_source)}`],
+              ["Estimated Fare", <Typography fontWeight={700}>₹{num(success.estimated_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Typography>],
+              num(success.coupon_discount) > 0 && ["Coupon Discount", <Typography fontWeight={700} color="warning.main">− ₹{num(success.coupon_discount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Typography>],
+              ["Payable", <Typography fontWeight={800} color="success.main">₹{num(success.payable_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</Typography>],
             ].filter(Boolean).map((row: any, i) => (
               <Stack key={i} direction="row" justifyContent="space-between" alignItems="center"
                 py={1} sx={{ borderBottom: "1px solid", borderColor: "divider" }}>
@@ -403,6 +359,13 @@ export default function CabBookingPage() {
             </Stack>
           </Stack>
         </Paper>
+        {success.notes?.length > 0 && (
+          <Alert severity="info" sx={{ mb: 3, borderRadius: 2, textAlign: "left" }}>
+            {success.notes.map((n, i) => (
+              <Typography key={i} variant="caption" display="block">{n}</Typography>
+            ))}
+          </Alert>
+        )}
         <Stack direction="row" gap={2} justifyContent="center">
           <Button variant="outlined" onClick={() => navigate("/customer-care")}
             sx={{ borderRadius: 2, textTransform: "none" }}>
@@ -733,102 +696,186 @@ export default function CabBookingPage() {
                       }}
                     />
 
-                    {/* Distance field */}
-                    <Box>
-                      <TextField
-                        label="Estimated Distance (km)"
-                        value={distance}
-                        onChange={e => { setDistance(e.target.value.replace(/[^0-9.]/g, "")); setDistanceAuto(false); }}
-                        fullWidth size="small"
-                        placeholder="e.g. 25"
-                        InputProps={{
-                          endAdornment: distanceLoading
-                            ? <CircularProgress size={14} />
-                            : distanceAuto && distance
-                              ? <Chip label="Auto" size="small" color="success" sx={{ fontSize: 10, height: 20 }} />
-                              : null,
+                    {/* Return datetime — round trips only; drives PER_DAY allowance */}
+                    {tripType === "ROUND_TRIP" && (
+                      <DateTimePicker
+                        label="Return Date & Time"
+                        value={returnDt}
+                        onChange={v => setReturnDt(v)}
+                        minDateTime={pickupDt ?? undefined}
+                        slotProps={{
+                          textField: {
+                            size: "small", fullWidth: true,
+                            helperText: "Used for the day count when the fare sheet charges per day",
+                            sx: { "& .MuiOutlinedInput-root": { borderRadius: 2 } },
+                          },
                         }}
-                        helperText={
-                          distanceLoading
-                            ? "Computing driving distance via Google Maps…"
-                            : distanceAuto && distance
-                              ? `Road distance auto-computed (${distance} km). You can override.`
-                              : "Used for fare estimate. Will be auto-computed when both locations are pinned on map."
-                        }
-                        sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
                       />
+                    )}
+
+                    {/* Quote action */}
+                    <Box>
+                      <Button
+                        variant="outlined"
+                        onClick={handleQuote}
+                        disabled={!step2Valid() || quoteLoading}
+                        startIcon={quoteLoading ? <CircularProgress size={16} /> : <Calculate />}
+                        sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
+                      >
+                        {quoteLoading ? "Calculating…" : quote ? "Recalculate Fare" : "Get Fare"}
+                      </Button>
+                      <Typography variant="caption" color="text.secondary" display="block" mt={0.75}>
+                        The fare is calculated by the server from these places and the price
+                        sheet in force on the trip day — kilometres, night charge and toll included.
+                      </Typography>
+                      {quoteError && (
+                        <Alert severity="error" sx={{ mt: 1.5, borderRadius: 2 }}>
+                          {quoteError}
+                        </Alert>
+                      )}
                     </Box>
                   </Stack>
 
-                  {/* ── Fare estimate card ── */}
-                  {estimatedAmount != null && (() => {
-                    const pricing = meta?.pricing[String(vcatId)]?.[tripType];
-                    const actualDist = parseFloat(distance) || 0;
-                    const breakdown = pricing
-                      ? computeFareBreakdown(pricing, actualDist, pickupDt, pickupDt)
-                      : null;
-                    return (
-                      <Box sx={{
-                        mt: 2.5, p: 2.5, borderRadius: 2.5,
-                        background: `linear-gradient(135deg, ${alpha("#22C55E", 0.06)}, ${alpha("#16A34A", 0.04)})`,
-                        border: "1px solid", borderColor: alpha("#22C55E", 0.25),
-                      }}>
-                        <Stack direction="row" alignItems="flex-start" gap={2}>
-                          <Box sx={{
-                            width: 44, height: 44, borderRadius: 2,
-                            bgcolor: alpha("#22C55E", 0.15),
-                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                          }}>
-                            <Calculate sx={{ color: "#22C55E", fontSize: 22 }} />
-                          </Box>
-                          <Box flex={1}>
-                            <Typography fontSize={12} fontWeight={600} color="text.secondary" mb={0.25}>
-                              ESTIMATED FARE
-                            </Typography>
+                  {/* ── Quoted fare card ── */}
+                  {quote && (
+                    <Box sx={{
+                      mt: 2.5, p: 2.5, borderRadius: 2.5,
+                      background: `linear-gradient(135deg, ${alpha("#22C55E", 0.06)}, ${alpha("#16A34A", 0.04)})`,
+                      border: "1px solid", borderColor: alpha("#22C55E", 0.25),
+                    }}>
+                      <Stack direction="row" alignItems="flex-start" gap={2}>
+                        <Box sx={{
+                          width: 44, height: 44, borderRadius: 2,
+                          bgcolor: alpha("#22C55E", 0.15),
+                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        }}>
+                          <Calculate sx={{ color: "#22C55E", fontSize: 22 }} />
+                        </Box>
+                        <Box flex={1}>
+                          <Typography fontSize={12} fontWeight={600} color="text.secondary" mb={0.25}>
+                            QUOTED FARE
+                          </Typography>
+                          <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
                             <Typography fontWeight={900} fontSize={28} color="#22C55E" lineHeight={1}>
-                              ₹{estimatedAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                              ₹{quoteTotal!.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
                             </Typography>
-                            {breakdown && (
-                              <Stack gap={0.25} mt={1}>
-                                <FareLine label="Base fare" value={breakdown.base} />
-                                {breakdown.distance > 0 && (
-                                  <FareLine
-                                    label={`Distance (${actualDist} − ${pricing?.minimum_km ?? 0} km) × ₹${pricing?.per_km_rate}/km`}
-                                    value={breakdown.distance}
-                                  />
-                                )}
-                                {breakdown.allowance > 0 && (
-                                  <FareLine label="Driver allowance" value={breakdown.allowance} />
-                                )}
-                                {breakdown.night > 0 && (
-                                  <FareLine label="Night charge (22:00–06:00)" value={breakdown.night} />
-                                )}
-                              </Stack>
+                            <Typography fontSize={12} color="text.secondary">
+                              {num(quote.distance_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km ·{" "}
+                              {distanceSourceLabel(quote.distance_source)}
+                            </Typography>
+                          </Stack>
+                          <Stack gap={0.25} mt={1}>
+                            {num(quote.base_fare) !== 0 && (
+                              <FareLine label="Base fare" value={num(quote.base_fare)} />
                             )}
-                          </Box>
-                          <Box textAlign="right" flexShrink={0}>
-                            <Typography fontSize={11} color="text.secondary">Vehicle</Typography>
-                            <Typography fontSize={13} fontWeight={700}>{selectedVcat?.category_name}</Typography>
-                          </Box>
-                        </Stack>
-                      </Box>
-                    );
-                  })()}
+                            {num(quote.distance_charge) !== 0 && (
+                              <FareLine
+                                label={`Distance charge (${num(quote.billable_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km)`}
+                                value={num(quote.distance_charge)}
+                              />
+                            )}
+                            {num(quote.driver_allowance) !== 0 && (
+                              <FareLine label="Driver allowance" value={num(quote.driver_allowance)} />
+                            )}
+                            {num(quote.night_charge) !== 0 && (
+                              <FareLine label="Night charge" value={num(quote.night_charge)} />
+                            )}
+                            {num(quote.toll) !== 0 && (
+                              <FareLine label="Toll" value={num(quote.toll)} />
+                            )}
+                            {num(quote.waiting) !== 0 && (
+                              <FareLine label="Waiting" value={num(quote.waiting)} />
+                            )}
+                          </Stack>
+                          {quote.notes?.length > 0 && (
+                            <Alert severity="warning" sx={{ mt: 1.5, py: 0.25, borderRadius: 2 }}>
+                              {quote.notes.map((n, i) => (
+                                <Typography key={i} variant="caption" display="block">{n}</Typography>
+                              ))}
+                            </Alert>
+                          )}
+                        </Box>
+                        <Box textAlign="right" flexShrink={0}>
+                          <Typography fontSize={11} color="text.secondary">Vehicle</Typography>
+                          <Typography fontSize={13} fontWeight={700}>{selectedVcat?.category_name}</Typography>
+                        </Box>
+                      </Stack>
 
-                  <Stack direction="row" gap={1.5} mt={3} justifyContent="space-between">
+                      {quote.coupons?.length > 0 && (
+                        <Box mt={2}>
+                          <Typography variant="caption" fontWeight={700} color="text.secondary"
+                            sx={{ textTransform: "uppercase", letterSpacing: 0.7 }}>
+                            Coupons this customer can use
+                          </Typography>
+                          <Stack gap={0.75} mt={0.75}>
+                            {quote.coupons.map(c => {
+                              const selected = couponCode === c.coupon_code;
+                              return (
+                                <Paper
+                                  key={c.coupon_id}
+                                  variant="outlined"
+                                  onClick={() => setCouponCode(selected ? "" : c.coupon_code)}
+                                  sx={{
+                                    p: 1.25, borderRadius: 2, cursor: "pointer",
+                                    borderColor: selected ? "warning.main" : "divider",
+                                    borderWidth: selected ? 2 : 1,
+                                  }}
+                                >
+                                  <Stack direction="row" alignItems="center" gap={1}>
+                                    <Radio checked={selected} size="small" />
+                                    <Box flex={1}>
+                                      <Typography fontSize={12.5} fontWeight={700}>
+                                        {c.coupon_code} · {c.title}
+                                      </Typography>
+                                      <Typography fontSize={11} color="text.secondary">
+                                        Saves ₹{num(c.discount_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                                        {" "}· customer pays ₹{num(c.final_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                                        {c.partner_funded ? " · partner-funded" : ""}
+                                      </Typography>
+                                    </Box>
+                                  </Stack>
+                                </Paper>
+                              );
+                            })}
+                          </Stack>
+                          <Typography variant="caption" color="text.disabled" display="block" mt={0.75}>
+                            Suggested by the same validator that redeems the code; the discount is
+                            re-checked when the booking is created.
+                          </Typography>
+                        </Box>
+                      )}
+
+                      <Divider sx={{ my: 1.5 }} />
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Typography fontSize={12.5} fontWeight={700}>Customer pays</Typography>
+                        <Typography fontSize={16} fontWeight={900} color="success.main">
+                          ₹{(payableAmount ?? quoteTotal!).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  )}
+
+                  <Stack direction="row" gap={1.5} mt={3} justifyContent="space-between" alignItems="center">
                     <Button variant="outlined" onClick={() => setStep(0)}
                       sx={{ borderRadius: 2, textTransform: "none" }}>
                       ← Back
                     </Button>
-                    <Button variant="contained" disabled={!step2Valid()} onClick={() => setStep(2)}
-                      sx={{
-                        borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3.5,
-                        background: step2Valid()
-                          ? `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`
-                          : undefined,
-                      }}>
-                      Review Booking →
-                    </Button>
+                    <Stack alignItems="flex-end" gap={0.5}>
+                      <Button variant="contained" disabled={!step2Valid() || !quote} onClick={() => setStep(2)}
+                        sx={{
+                          borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3.5,
+                          background: step2Valid() && quote
+                            ? `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`
+                            : undefined,
+                        }}>
+                        Review Booking →
+                      </Button>
+                      {!quote && step2Valid() && (
+                        <Typography variant="caption" color="text.secondary">
+                          Get the fare above to review this booking.
+                        </Typography>
+                      )}
+                    </Stack>
                   </Stack>
                 </Paper>
               </Stack>
@@ -861,8 +908,21 @@ export default function CabBookingPage() {
                     ["Drop",         drop.address],
                     drop.lat ? ["Drop Coords", `${drop.lat.toFixed(5)}, ${drop.lng!.toFixed(5)}`] : null,
                     ["Date & Time",  pickupDt ? format(pickupDt, "dd MMM yyyy, hh:mm aa") : "—"],
-                    ["Distance",     distance ? `${distance} km${distanceAuto ? " (auto)" : ""}` : "Not provided"],
-                    ["Est. Fare",    estimatedAmount != null ? `₹${estimatedAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"],
+                    tripType === "ROUND_TRIP" && returnDt
+                      ? ["Return", format(returnDt, "dd MMM yyyy, hh:mm aa")]
+                      : null,
+                    quote
+                      ? ["Distance", `${num(quote.distance_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km · ${distanceSourceLabel(quote.distance_source)}`]
+                      : null,
+                    quote
+                      ? ["Quoted Fare", `₹${num(quote.total).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
+                      : null,
+                    selectedCoupon
+                      ? ["Coupon", `${selectedCoupon.coupon_code} · − ₹${num(selectedCoupon.discount_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
+                      : null,
+                    payableAmount != null
+                      ? ["Customer Pays", `₹${payableAmount.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
+                      : null,
                   ].filter(Boolean).map((row: any, i) => (
                     <Stack key={i} direction="row" justifyContent="space-between" alignItems="flex-start"
                       py={1.25} sx={{ borderBottom: "1px solid", borderColor: "divider" }}>

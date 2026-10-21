@@ -731,6 +731,7 @@ export default function CabBookingDetailPage() {
         bookingId={bId}
         cabId={cId}
         cab={cab}
+        cityId={booking.city_id}
       />
       {/* Advance modals */}
       {(() => {

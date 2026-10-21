@@ -25,6 +25,11 @@ export interface CabBookingOut {
   pickup_location: string | null;
   drop_location: string | null;
   pickup_datetime: string | null;
+  return_datetime?: string | null;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  drop_latitude?: number | null;
+  drop_longitude?: number | null;
   estimated_distance: number | null;
   estimated_amount: number | null;
   final_amount: number | null;
@@ -441,13 +446,6 @@ export const bookingService = {
 
   reassignPartner:    (bookingId: number, cabId: number, partner_id: number, reason?: string) =>
     apiClient.post(`${base}/${bookingId}/cab/${cabId}/reassign`, { partner_id, reason }).then(r => r.data),
-
-  editCabDetails: (bookingId: number, cabId: number, data: {
-    pickup_location?: string; drop_location?: string;
-    estimated_distance?: number; estimated_amount?: number;
-    trip_type?: string; vehicle_category_id?: number;
-  }) =>
-    apiClient.patch(`${base}/${bookingId}/cab/${cabId}/edit`, data).then(r => r.data),
 
   editHotelDetails: (reservationId: number, data: {
     room_category_id: number;

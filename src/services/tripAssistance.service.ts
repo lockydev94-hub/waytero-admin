@@ -48,6 +48,8 @@ export interface TripDetail {
   // Coupon & advance
   coupon_discount: number;
   advance_paid: number;
+  /** Fare − coupon − advance (+GST for tax invoices), as the server collects it. */
+  balance_due: number;
   // Payment
   payment_mode: string | null;
   payment_collected_by: string | null;
@@ -105,6 +107,17 @@ export interface TripPricingPreview {
   calculated_amount: number | null;
 }
 
+export interface CommissionPreview {
+  booking_number: string;
+  partner_id: number | null;
+  commission_type: "PERCENTAGE" | "FLAT";
+  /** Null for a FLAT rule — the amount lives in commission_value. */
+  commission_percent: number | null;
+  commission_value: number;
+  rule_source: string;
+  rule_id: number | null;
+}
+
 const base = "/admin/trip-assist";
 
 export const tripAssistanceService = {
@@ -155,7 +168,7 @@ export const tripAssistanceService = {
     apiClient.post(`${base}/update-invoice-url`, { booking_number, invoice_url }).then(r => r.data),
 
   // Get commission preview for a booking
-  getCommissionPreview: (booking_number: string): Promise<{ booking_number: string; partner_id: number | null; commission_percent: number; rule_source: string }> =>
+  getCommissionPreview: (booking_number: string): Promise<CommissionPreview> =>
     apiClient.get(`${base}/commission-preview`, { params: { booking_number } }).then(r => r.data),
 
   // Get customer wallet balance for WALLET payment mode

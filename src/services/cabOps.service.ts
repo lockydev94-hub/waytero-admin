@@ -22,6 +22,11 @@ export interface CabOpsQueueItem {
   pending_partner_id: number | null;
   pending_partner_name: string | null;
   pending_partner_code: string | null;
+  /** A fan-out round asks several partners at once; these name them. */
+  open_offers: number;
+  offered_partner_names: string | null;
+  /** Set (AUTO_ASSIGN_EXHAUSTED) when the chain stopped with nobody being asked. */
+  needs_attention: string | null;
   acceptance_deadline: string | null;
   seconds_to_deadline: number | null;
   customer_name: string | null;
