@@ -135,7 +135,14 @@ export default function DashboardPage() {
     retry: false,
   });
 
-  const { data: hotelPipeline, isLoading: pipelineLoading } = useQuery({
+  // Same reasoning as the expiring-documents count above: the hotel stats
+  // endpoint admits SUPER_ADMIN / ADMIN / VERIFICATION_OFFICER only, so a CCO
+  // is refused rather than shown an empty funnel, and "No data" would read as
+  // "no hotels" instead of "not your screen".
+  const {
+    data: hotelPipeline, isLoading: pipelineLoading,
+    isError: pipelineFailed, error: pipelineError,
+  } = useQuery({
     queryKey: ["dashboard-hotel-pipeline"],
     queryFn: dashboardService.getHotelPipeline,
     staleTime: CACHE_TTL.MEDIUM,
@@ -308,6 +315,10 @@ export default function DashboardPage() {
           </Stack>
           {pipelineLoading ? (
             <Skeleton variant="rectangular" height={140} />
+          ) : pipelineFailed ? (
+            <Alert severity="info" sx={{ py: 0.5 }}>
+              {apiErrorMessage(pipelineError, "The hotel pipeline is not available to your account.")}
+            </Alert>
           ) : !hotelPipeline ? (
             <Typography variant="body2" color="text.secondary">No data</Typography>
           ) : (

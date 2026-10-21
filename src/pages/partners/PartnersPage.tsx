@@ -2843,12 +2843,16 @@ export default function PartnersPage() {
   // ── Load cities ONCE at page level and pass down ──────────────────────────
   const { data: cities = [] } = useCities();
 
-  const { data, isLoading, isFetching, refetch } = useQuery({
+  // isError matters: GET /admin/partners is not branch-reviewed yet, so a
+  // branch account is refused by the scope gate — showing "No partners found"
+  // would tell them the partner network is empty.
+  const { data, isLoading, isFetching, isError, error, refetch } = useQuery({
     queryKey: ["admin-partners", page, rowsPerPage, statusFilter, typeFilter],
     queryFn: () =>
       partnerService.list({ page: page + 1, page_size: rowsPerPage,
         status: statusFilter || undefined, partner_type: typeFilter || undefined }),
     placeholderData: (prev) => prev,
+    retry: false,
   });
 
   const partners: AdminPartnerListItem[] = data?.items ?? [];
@@ -2935,7 +2939,15 @@ export default function PartnersPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.length === 0 && !isLoading && (
+              {isError ? (
+                <TableRow>
+                  <TableCell colSpan={7} sx={{ py: 4 }}>
+                    <Alert severity="info">
+                      {apiErrorMessage(error, "Partners could not be loaded for your account.")}
+                    </Alert>
+                  </TableCell>
+                </TableRow>
+              ) : filtered.length === 0 && !isLoading && (
                 <TableRow>
                   <TableCell colSpan={7} align="center" sx={{ py: 6, color: "text.disabled" }}>
                     No partners found
