@@ -56,6 +56,45 @@ export interface EmailStats {
   total: number;
 }
 
+export interface EmailTemplate {
+  event_type: string;
+  label: string;
+  subject: string;
+  heading: string;
+  body: string;
+  cta_label: string;
+  cta_url: string;
+  tone: string;
+  is_active: boolean;
+  is_custom: boolean;
+  updated_at: string | null;
+}
+
+export interface EmailBranding {
+  platform_name: string;
+  logo_url: string;
+  support_email: string;
+  support_phone: string;
+  web_url: string;
+}
+
+export interface EmailTemplatesResponse {
+  items: EmailTemplate[];
+  branding: EmailBranding;
+  placeholders: string[];
+}
+
+export interface EmailTemplateInput {
+  label?: string;
+  subject: string;
+  heading?: string;
+  body?: string;
+  cta_label?: string;
+  cta_url?: string;
+  tone?: string;
+  is_active: boolean;
+}
+
 // ── Settings ──────────────────────────────────────────────────
 
 export const emailService = {
@@ -111,6 +150,42 @@ export const emailService = {
 
   async resend(id: number): Promise<{ success: boolean; message: string; log_id: number }> {
     const res = await apiClient.post(`/admin/email/logs/${id}/resend`);
+    return res.data.data ?? res.data;
+  },
+
+  // ── Templates ───────────────────────────────────────────────
+
+  async getTemplates(): Promise<EmailTemplatesResponse> {
+    const res = await apiClient.get("/admin/email/templates");
+    return res.data.data ?? res.data;
+  },
+
+  async saveTemplate(
+    eventType: string,
+    payload: EmailTemplateInput
+  ): Promise<EmailTemplate> {
+    const res = await apiClient.put(
+      `/admin/email/templates/${encodeURIComponent(eventType)}`,
+      payload
+    );
+    return res.data.data ?? res.data;
+  },
+
+  async resetTemplate(eventType: string): Promise<{ success: boolean; message: string }> {
+    const res = await apiClient.delete(
+      `/admin/email/templates/${encodeURIComponent(eventType)}`
+    );
+    return res.data.data ?? res.data;
+  },
+
+  async previewTemplate(
+    eventType: string,
+    payload: Partial<EmailTemplateInput>
+  ): Promise<{ subject: string; html: string }> {
+    const res = await apiClient.post(
+      `/admin/email/templates/${encodeURIComponent(eventType)}/preview`,
+      payload
+    );
     return res.data.data ?? res.data;
   },
 };

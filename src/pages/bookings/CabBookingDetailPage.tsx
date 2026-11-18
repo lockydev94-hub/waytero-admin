@@ -644,6 +644,13 @@ export default function CabBookingDetailPage() {
                 <Table size="small">
                   <TableBody>
                     <InfoRow label="Paid" value={<Typography variant="body2" fontWeight={700} color="success.main">₹{booking.total_paid_amount.toLocaleString()}</Typography>} icon={<CheckCircle sx={{ fontSize: 14 }} />} />
+                    {(cab.coupon_discount ?? 0) > 0 && (
+                      <InfoRow
+                        label={`Coupon${cab.coupon_code ? ` (${cab.coupon_code})` : ""}`}
+                        value={<Typography variant="body2" fontWeight={700} color="error.main">−₹{(cab.coupon_discount ?? 0).toLocaleString()}</Typography>}
+                        icon={<AttachMoney sx={{ fontSize: 14 }} />}
+                      />
+                    )}
                     <InfoRow label="Refund" value={booking.total_refund_amount > 0 ? `₹${booking.total_refund_amount.toLocaleString()}` : "—"} icon={<AttachMoney sx={{ fontSize: 14 }} />} />
                     <InfoRow label="Pay Status" value={<Chip label={booking.payment_status} size="small" color={booking.payment_status === "PAID" ? "success" : "warning"} />} icon={<Payment sx={{ fontSize: 14 }} />} />
                   </TableBody>

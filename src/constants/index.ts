@@ -38,6 +38,7 @@ export type NavRole = "SUPER_ADMIN" | "ADMIN" | "CCO" | "FINANCE_MANAGER" | "VER
 export const NAV_KEYS = [
   "dashboard",
   "bookings", "cab-ops", "trip-assistance", "hotel-switches", "customer-care",
+  "partner-support", "cab-rate-card",
   "chat", "callback-requests", "contact-messages", "enquiries",
   "partner-applications", "guest-feedback",
   "partners", "drivers", "vehicles", "onboarding-docs", "vehicles-maintenance",
@@ -45,7 +46,7 @@ export const NAV_KEYS = [
   "payments", "wallets", "settlements", "handover-reconciliation", "coupons",
   "tax-gst", "reports",
   "cancellation-requests", "cancellation-policy", "account-deletion",
-  "notices", "email-logs",
+  "notices", "email-templates", "email-logs",
   "cms", "offers", "blog", "landing-pages", "website-pages",
   "users", "work-hours", "audit", "settings", "branches",
 ] as const;
@@ -85,6 +86,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { key: "trip-assistance", label: "Trip Assistance", icon: "DirectionsRun", path: "/trip-assistance", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "trip help emergency assist sos" },
       { key: "hotel-switches", label: "Hotel Switches", icon: "SwapHoriz", path: "/bookings/switches", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "switch transfer hotel move" },
       { key: "customer-care", label: "Customer Care", icon: "HeadsetMic", path: "/customer-care", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "customer support help care issue log" },
+      { key: "partner-support", label: "Partner Support", icon: "SupportAgent", path: "/partner-support", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "partner support help ticket issue app payment document trip" },
+      { key: "cab-rate-card", label: "Cab Rate Card", icon: "PriceChange", path: "/cab-rate-card", roles: ["SUPER_ADMIN","ADMIN"], keywords: "cab rate card package price tariff supplier local outstation daily agreed customer price" },
       { key: "chat", label: "Live Chat", icon: "Forum", path: "/chat", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "chat live message support" },
       { key: "callback-requests", label: "Callback Requests", icon: "PhoneCallback", path: "/leads/callback-requests", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "callback request call me mobile phone lead" },
       { key: "contact-messages", label: "Contact Messages", icon: "Email", path: "/leads/contact-messages", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "contact message enquiry lead" },
@@ -137,6 +140,7 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Communication",
     items: [
       { key: "notices", label: "Partner Notices", icon: "Campaign", path: "/notices", roles: ["SUPER_ADMIN","ADMIN","CCO"], keywords: "notice announcement partner broadcast" },
+      { key: "email-templates", label: "Email Templates", icon: "Email", path: "/email/templates", roles: ["SUPER_ADMIN","ADMIN"], keywords: "email template subject body branding edit" },
       { key: "email-logs", label: "Email Logs", icon: "MarkEmailRead", path: "/email/logs", roles: ["SUPER_ADMIN","ADMIN"], keywords: "email log mail sent" },
     ],
   },
@@ -181,6 +185,7 @@ const TITLE_BY_PATH: Array<[RegExp, string]> = [
   [/^\/cms\/landing-pages\/[^/]+$/,                       "Landing Page Editor"],
   [/^\/cms\/pages\/[^/]+$/,                               "Page Editor"],
   [/^\/tours\/[^/]+$/,                                    "Tour Detail"],
+  [/^\/cab-rate-card$/,                                   "Cab Rate Card"],
   [/^\/customer-care\/cab-booking\/[^/]+$/,               "Customer Cab Bookings"],
   [/^\/customer-care\/hotel-booking\/[^/]+$/,             "Customer Hotel Bookings"],
   [/^\/customer-care\/tour-booking\/[^/]+$/,              "Customer Tour Bookings"],

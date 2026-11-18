@@ -80,6 +80,23 @@ function ActiveSessionManager({ children }: { children: ReactNode }) {
     clearSession("/login?reason=daily");
   }, [msToDailyLogout]);
 
+  // Absolute 12-hour session cap. The server enforces it at /auth/refresh too,
+  // but a tab that sits locked (or asleep) must not look usable past the bound.
+  const sessionExpiresAt = config?.session_expires_at ?? null;
+  useEffect(() => {
+    if (!sessionExpiresAt) return;
+    const deadline = new Date(sessionExpiresAt).getTime();
+    if (!Number.isFinite(deadline)) return;
+    const tick = () => {
+      if (deadline - trustedNowMs() <= 0) {
+        clearSession("/login?reason=session-expired");
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 15_000);
+    return () => window.clearInterval(id);
+  }, [sessionExpiresAt]);
+
   const warningOpen = msToDailyLogout !== null && msToDailyLogout <= DAILY_WARNING_MS;
 
   return (

@@ -175,7 +175,19 @@ export const useLockStore = create<LockStore>((set, get) => {
     },
 
     startSession: () => {
-      write({ isLocked: false, lockedAt: null, lastActivityTs: Date.now() }, true);
+      // A new sign-in must not inherit the previous account's PIN state or
+      // session deadline while the fresh policy request is still in flight.
+      write(
+        {
+          isLocked: false,
+          lockedAt: null,
+          lastActivityTs: Date.now(),
+          sessionConfig: null,
+          serverOffsetMs: 0,
+          idleRemainingMs: 5 * 60_000,
+        },
+        true
+      );
     },
   };
 });

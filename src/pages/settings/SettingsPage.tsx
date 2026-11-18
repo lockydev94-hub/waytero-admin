@@ -33,6 +33,7 @@ import { SLUG_REGEX, slugify } from "../../utils/seoValidation";
 import { apiErrorMessage } from "../../utils/apiError";
 import { limitKindForAssetType, mediaHint } from "../../utils/mediaLimits";
 import EmailSettingsTab from "./EmailSettingsTab";
+import CabBookingSettingsTab from "./CabBookingSettingsTab";
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,7 +56,7 @@ const INTEGRATION_FIELDS: Record<string, string[]> = {
   CLOUDINARY: ["cloud_name", "api_key", "api_secret", "upload_preset"],
   FIREBASE: ["project_id", "private_key_id", "private_key", "client_email", "web_api_key", "storage_bucket"],
   GOOGLE_MAPS: ["api_key", "map_id"],
-  RAZORPAY: ["key_id", "key_secret", "webhook_secret"],
+  RAZORPAY: ["key_id", "key_secret", "webhook_secret", "advance_percent"],
   MSG91: ["auth_key", "sender_id", "route"],
   WHATSAPP: ["api_key", "phone_number_id", "business_account_id"],
   FCM: ["server_key", "sender_id"],
@@ -70,6 +71,7 @@ const INTEGRATION_FIELDS: Record<string, string[]> = {
 const TAB_KEYS = [
   "platform", "system-config", "api-integrations", "app-versions",
   "commission", "pricing", "notifications", "email", "master-data",
+  "cab-booking",
 ];
 
 function initialTab(): number {
@@ -115,6 +117,7 @@ export default function SettingsPage() {
           <Tab icon={<Notifications sx={{ fontSize: 16 }} />} iconPosition="start" label="Notifications" />
           <Tab icon={<MarkEmailRead sx={{ fontSize: 16 }} />} iconPosition="start" label="Email" />
           <Tab icon={<StorageOutlined sx={{ fontSize: 16 }} />} iconPosition="start" label="Master Data" />
+          <Tab icon={<ToggleOn sx={{ fontSize: 16 }} />} iconPosition="start" label="Cab Booking" />
         </Tabs>
       </Paper>
 
@@ -127,6 +130,7 @@ export default function SettingsPage() {
       <TabPanel value={tab} index={6}><NotificationTemplatesTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
       <TabPanel value={tab} index={7}><EmailSettingsTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
       <TabPanel value={tab} index={8}><MasterDataTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
+      <TabPanel value={tab} index={9}><CabBookingSettingsTab enqueueSnackbar={enqueueSnackbar} /></TabPanel>
     </Box>
   );
 }
@@ -1535,6 +1539,14 @@ function ApiIntegrationsTab({ enqueueSnackbar }: any) {
 
                 <Collapse in={isExpanded}>
                   <Divider sx={{ my: 2 }} />
+                  {ai.service_type === "RAZORPAY" && (
+                    <Alert severity="info" sx={{ mb: 2 }}>
+                      The customer app shows Razorpay only while this row is Active and both Key Id
+                      and Key Secret are saved. Advance Percent controls the partial-payment option
+                      (for example 30 means pay 30% now). Webhook Secret lets Razorpay confirm a
+                      captured payment if the app closes before verification returns.
+                    </Alert>
+                  )}
                   <Grid container spacing={2}>
                     {fields.map(field => (
                       <Grid item xs={12} sm={6} key={field}>

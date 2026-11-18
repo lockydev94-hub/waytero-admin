@@ -122,6 +122,9 @@ export interface SessionConfig {
   mpin_attempts_remaining: number | null;
   mpin_min_length: number;
   access_token_expires_in: number;
+  /** Absolute dashboard session bounds (12 h). */
+  session_started_at?: string | null;
+  session_expires_at?: string | null;
 }
 
 export interface ApiError {

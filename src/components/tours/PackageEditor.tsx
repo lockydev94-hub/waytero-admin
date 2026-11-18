@@ -22,10 +22,22 @@ import {
 import { tourService, TourPackage } from "../../services/tour.service";
 import { apiErrorMessage } from "../../utils/apiError";
 import MediaPicker from "../media/MediaPicker";
+import type { MediaPickerCropSpec } from "../media/MediaPicker";
 import SeoFields from "../forms/SeoFields";
 import { seoHasError, slugify } from "../../utils/seoValidation";
 import type { SeoValues } from "../../utils/seoValidation";
 import type { MediaLibraryItem } from "../../services/media.service";
+
+// Every tour photo is cropped and resized to this before it reaches
+// Cloudinary: 3:2 is the shape of the package card on the website
+// (TourPackagesSection.tsx — `aspect-[3/2]`), so a 4 MB phone photo lands as
+// a 1200×800 file that fills the card without a single pixel being cut by
+// the browser. Changing the card's ratio means changing this too.
+const TOUR_IMAGE_CROP: MediaPickerCropSpec = {
+  presets: [{ label: "Tour card (3:2)", ratio: 3 / 2 }],
+  outputWidth: 1200,
+  outputHeight: 800,
+};
 
 const PACKAGE_TYPES = [
   { value: "FIXED", label: "Fixed Departure", icon: <Schedule /> },
@@ -550,7 +562,11 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
             <Box>
               <Typography variant="subtitle1" fontWeight={800}>Media gallery</Typography>
-              <Typography variant="body2" color="text.secondary">Upload images from your device or paste an image URL. Mark one as the primary hero image.</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Upload images from your device or paste an image URL. Uploads go through a crop
+                step and are saved at 1200×800 (3:2) — the shape of the card on the website.
+                Mark one as the primary hero image.
+              </Typography>
             </Box>
           </Stack>
 
@@ -577,7 +593,7 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
             {form.media.map((m: any, idx: number) => (
               <Grid item xs={12} sm={6} md={4} key={idx}>
                 <Card variant="outlined" sx={{ borderRadius: 2, borderColor: m.is_primary ? "primary.main" : "divider", borderWidth: m.is_primary ? 2 : 1 }}>
-                  <Box sx={{ position: "relative", aspectRatio: "4/3", bgcolor: "grey.100" }}>
+                  <Box sx={{ position: "relative", aspectRatio: "3/2", bgcolor: "grey.100" }}>
                     <img src={m.media_url} alt={m.caption || `image ${idx + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
                     {m.is_primary && <Chip label="Primary" color="primary" size="small" sx={{ position: "absolute", top: 8, left: 8 } as any} />}
                   </Box>
@@ -622,7 +638,7 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
         <Box>
           <Card variant="outlined" sx={{ borderRadius: 2, mb: 2, overflow: "hidden" }}>
             {form.media.find((m: any) => m.is_primary) && (
-              <Box sx={{ aspectRatio: "21/9", bgcolor: "grey.100" }}>
+              <Box sx={{ aspectRatio: "3/2", bgcolor: "grey.100" }}>
                 <img src={form.media.find((m: any) => m.is_primary).media_url} alt="hero" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </Box>
             )}
@@ -695,6 +711,7 @@ export default function PackageEditor({ open, initial, partners, cities, onClose
         kind="image"
         assetType="general"
         multiple
+        crop={TOUR_IMAGE_CROP}
         title="Upload package images"
       />
     </Box>

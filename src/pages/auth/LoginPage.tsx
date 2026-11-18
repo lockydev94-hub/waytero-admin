@@ -59,7 +59,11 @@ export default function LoginPage() {
   // page cannot know before signing in.
   const signOutReason = searchParams.get("reason");
   const [signOutNotice, setSignOutNotice] = useState(
-    signOutReason === "inactivity" || signOutReason === "daily" ? signOutReason : null
+    signOutReason === "inactivity" ||
+      signOutReason === "daily" ||
+      signOutReason === "session-expired"
+      ? signOutReason
+      : null
   );
 
   const [method, setMethod] = useState<LoginMethod>("password");
@@ -309,7 +313,9 @@ export default function LoginPage() {
               <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setSignOutNotice(null)}>
                 {signOutNotice === "daily"
                   ? "The dashboard signs everyone out at the daily cut-off time. Sign in again to continue."
-                  : "You were signed out after a period of inactivity. Sign in again to continue."}
+                  : signOutNotice === "session-expired"
+                    ? "Your 12-hour dashboard session has ended. Sign in again to continue."
+                    : "You were signed out after a period of inactivity. Sign in again to continue."}
               </Alert>
             )}
 

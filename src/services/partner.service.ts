@@ -276,6 +276,33 @@ export const partnerService = {
     return r.data;
   },
 
+  /**
+   * Admin: attach a document that already lives in Cloudinary (picked from the
+   * media library) instead of re-uploading the same file. The backend stores
+   * the secure_url as-is and still records the verification row.
+   */
+  attachDocument: async (
+    partnerId: number,
+    payload: {
+      file_url: string;
+      document_type: string;
+      document_number?: string;
+      expiry_date?: string;
+    },
+  ): Promise<{ message: string }> => {
+    const fd = new FormData();
+    fd.append("file_url", payload.file_url);
+    fd.append("document_type", payload.document_type);
+    if (payload.document_number) fd.append("document_number", payload.document_number);
+    if (payload.expiry_date) fd.append("expiry_date", payload.expiry_date);
+    const r = await apiClient.post<{ message: string }>(
+      `/admin/partners/${partnerId}/documents`,
+      fd,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    return r.data;
+  },
+
   /** Admin: add bank account for partner */
   addBankAccount: (partnerId: number, payload: AdminBankAccountPayload) =>
     apiClient.post(`/admin/partners/${partnerId}/bank-accounts`, payload).then((r) => r.data),

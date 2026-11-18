@@ -17,12 +17,15 @@ import {
   Alert, Grid, Paper, Chip, Divider, Stepper, Step,
   StepLabel, alpha, useTheme, IconButton,
   Card, CardContent, Avatar, Radio,
+  ToggleButton, ToggleButtonGroup, Dialog, DialogTitle,
+  DialogContent, DialogActions, Switch, FormControlLabel,
+  Table, TableBody, TableCell, TableHead, TableRow,
 } from "@mui/material";
 import {
   ArrowBack, DirectionsCar, CheckCircle, LocationOn,
   AccessTime, Info, Calculate, BookOnline,
   AirportShuttle, Route, SwapHoriz, Loop,
-  MyLocation, Warning, Verified,
+  Warning, Verified, Tune, LocalOffer, ErrorOutline,
 } from "@mui/icons-material";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
@@ -31,6 +34,7 @@ import { format } from "date-fns";
 
 import {
   customerCareService, CabBookingMeta, CabBookingQuote, CabBookingCreateResult,
+  RentalRateCard, RentalQuote, RateClass, CabTripCheck,
 } from "../../services/customerCare.service";
 import { apiErrorMessage } from "../../utils/apiError";
 import { settingsService, ApiIntegration } from "../../services/settings.service";
@@ -47,6 +51,26 @@ const TRIP_TYPES = [
 ];
 
 const STEPS = ["Trip Details", "Vehicle & Route", "Confirm & Book"];
+
+// The rate card sells three rental types. The trip-type cards the desk knows are
+// kept for the booking record, but a package is quoted on one of these three.
+const RENTAL_TYPES = [
+  { value: "LOCAL",       label: "Local",       desc: "Same-city hire, fixed hours + km" },
+  { value: "OUTSTATION",  label: "Outstation",  desc: "12h / 250km, one side" },
+  { value: "DAILY",       label: "Daily",       desc: "12h / 100km per day, driver + halt included" },
+];
+
+// A rate-card rental type is sellable while at least one of the trip types it
+// prices is enabled in Settings → Cab Booking.
+const RENTAL_TYPE_COVERS: Record<string, string[]> = {
+  LOCAL: ["LOCAL", "AIRPORT"],
+  OUTSTATION: ["OUTSTATION", "ONE_WAY", "ROUND_TRIP"],
+  DAILY: ["DAILY"],
+};
+
+function rentalTypeForTrip(tripType: string): string {
+  return ["OUTSTATION", "ONE_WAY", "ROUND_TRIP"].includes(tripType) ? "OUTSTATION" : "LOCAL";
+}
 
 // ── Fare helpers ──────────────────────────────────────────────
 // The backend returns Decimal money as JSON strings so nothing gets rounded in
@@ -157,11 +181,22 @@ export default function CabBookingPage() {
   // ── Form — Step 1
   const [cityId,   setCityId]   = useState<number | "">("");
   const [tripType, setTripType] = useState("");
+  // PACKAGE prices from the rate card (the platform default); PER_KM is the
+  // older distance engine. Package is the default because it is what the
+  // supplier sheet sells and what the customer is told down the phone.
+  const [pricingMode, setPricingMode] = useState<"PER_KM" | "PACKAGE">("PACKAGE");
 
   // ── Form — Step 2
   const [vcatId,   setVcatId]   = useState<number | "">("");
   const [pickup,   setPickup]   = useState<LocationState>(EMPTY_LOC);
   const [drop,     setDrop]     = useState<LocationState>(EMPTY_LOC);
+  // Places the car visits between pickup and drop. Each is its own leg of the
+  // journey, so the quote the customer hears includes them.
+  const [stops,    setStops]    = useState<string[]>([]);
+  const [newStop,  setNewStop]  = useState("");
+  // The server's verdict on whether this trip type matches these places.
+  const [tripCheck, setTripCheck] = useState<CabTripCheck | null>(null);
+  const [tripCheckLoading, setTripCheckLoading] = useState(false);
   const [pickupDt, setPickupDt] = useState<Date | null>(null);
   const [returnDt, setReturnDt] = useState<Date | null>(null);
   const [quote, setQuote]       = useState<CabBookingQuote | null>(null);
@@ -170,6 +205,25 @@ export default function CabBookingPage() {
   const [couponCode, setCouponCode]     = useState("");
   const quoteSeq = useRef(0);
   const [remarks, setRemarks]   = useState("");
+
+  // ── Package pricing state
+  const [rateCard, setRateCard] = useState<RentalRateCard | null>(null);
+  const [rateCardError, setRateCardError] = useState("");
+  const [rateClass, setRateClass] = useState("");
+  const [rentalType, setRentalType] = useState("LOCAL");
+  const [dutyHours, setDutyHours] = useState<number | "">("");
+  const [dutyKm, setDutyKm] = useState<number | "">("");
+  const [pkgDays, setPkgDays] = useState<number>(1);
+  const [afterMidnight, setAfterMidnight] = useState(false);
+  const [rentalQuote, setRentalQuote] = useState<RentalQuote | null>(null);
+  // Custom-price dialog: the admin agrees one package price for this customer.
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customPrice, setCustomPrice] = useState("");
+  const [customExtraHour, setCustomExtraHour] = useState("");
+  const [customExtraKm, setCustomExtraKm] = useState("");
+  const [customReason, setCustomReason] = useState("");
+  const [customSaving, setCustomSaving] = useState(false);
+  const [customError, setCustomError] = useState("");
 
   // ── Modal
   const [pickupMapOpen, setPickupMapOpen] = useState(false);
@@ -234,22 +288,120 @@ export default function CabBookingPage() {
     quoteSeq.current += 1;
     setQuote(null);
     setQuoteError("");
+    setRentalQuote(null);
     setCouponCode("");
-  }, [cityId, tripType, vcatId, pickup.address, drop.address, pickupDt, returnDt]);
+  }, [cityId, tripType, vcatId, pickup.address, drop.address, pickupDt, returnDt, stops]);
+
+  // ── Trip-type guard ────────────────────────────────────────────
+  // "Local, Bhubaneswar to Puri" is not a local trip, and the desk must hear
+  // that before quoting it. The same check gates create-booking server-side,
+  // so this is the visible half of one rule, not a second opinion.
+  useEffect(() => {
+    if (!tripType || !pickup.address) { setTripCheck(null); return; }
+    const handle = window.setTimeout(() => {
+      setTripCheckLoading(true);
+      customerCareService
+        .checkCabTrip({
+          trip_type: tripType,
+          pickup: { name: pickup.address, latitude: pickup.lat, longitude: pickup.lng },
+          drop: drop.address
+            ? { name: drop.address, latitude: drop.lat, longitude: drop.lng }
+            : null,
+          stops: stops.map(name => ({ name })),
+          pickup_datetime: pickupDt?.toISOString(),
+          return_datetime: returnDt?.toISOString(),
+        })
+        .then(res => setTripCheck(res.data))
+        .catch(() => setTripCheck(null))
+        .finally(() => setTripCheckLoading(false));
+    }, 450);
+    return () => window.clearTimeout(handle);
+  }, [tripType, pickup.address, pickup.lat, pickup.lng, drop.address, drop.lat, drop.lng, stops, pickupDt, returnDt]);
+
+  // ── Rate card for the city, with this customer's agreed prices ────────
+  // `customer_id` is what makes the panel able to show "your price" beside the
+  // card price; without it the card is just the card.
+  useEffect(() => {
+    if (!cityId) { setRateCard(null); return; }
+    let alive = true;
+    customerCareService.getCabRateCard({
+      city_id: Number(cityId),
+      customer_id: customerId ? parseInt(customerId, 10) : undefined,
+    })
+      .then(card => { if (alive) { setRateCard(card); setRateCardError(""); } })
+      .catch((e: any) => { if (alive) setRateCardError(apiErrorMessage(e, "Could not load the rate card")); });
+    return () => { alive = false; };
+  }, [cityId, customerId]);
+
+  // A package is quoted on one of the card's three rental types. Follow the trip
+  // type until the admin overrides it, so the default is never "the last one".
+  useEffect(() => {
+    if (pricingMode === "PACKAGE" && tripType) setRentalType(rentalTypeForTrip(tripType));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tripType, pricingMode]);
+
+  // Default the duty from the cheapest package of the chosen class + type, so the
+  // desk starts from something sellable instead of empty boxes.
+  useEffect(() => {
+    if (pricingMode !== "PACKAGE" || !rateCard) return;
+    const cls = rateCard.classes.find(c => c.vehicle_class === rateClass);
+    const pkg = cls?.packages.find(p => p.rental_type === rentalType);
+    if (!pkg) return;
+    setDutyHours(prev => (prev === "" ? pkg.included_hours : prev));
+    setDutyKm(prev => (prev === "" ? pkg.included_km : prev));
+  }, [rateCard, rateClass, rentalType, pricingMode]);
+
+  // A city change can leave a class selected that its card does not sell. Clear
+  // it rather than quoting a package that no longer exists here.
+  useEffect(() => {
+    if (!rateCard || !rateClass) return;
+    if (!rateCard.classes.some(c => c.vehicle_class === rateClass)) {
+      setRateClass(""); setDutyHours(""); setDutyKm("");
+    }
+  }, [rateCard, rateClass]);
+
+  const selectedClass: RateClass | null =
+    rateCard?.classes.find(c => c.vehicle_class === rateClass) ?? null;
+  const classPackages = (selectedClass?.packages ?? []).filter(p => p.rental_type === rentalType);
+
+  // Anything that changes the priced trip invalidates the package quote too.
+  useEffect(() => { setRentalQuote(null); }, [rateClass, rentalType, dutyHours, dutyKm, pkgDays, afterMidnight]);
 
   // ── Quote ─────────────────────────────────────────────────────
   async function handleQuote() {
     if (!step2Valid() || !pickupDt) return;
+    // The guard already told the agent this type cannot be right for these
+    // places. Quoting it would only produce a fare for the wrong product.
+    if ((tripCheck?.errors.length ?? 0) > 0) {
+      setQuoteError(tripCheck!.errors[0]);
+      return;
+    }
     const seq = ++quoteSeq.current;
     setQuoteLoading(true);
     setQuoteError("");
     try {
+      if (pricingMode === "PACKAGE") {
+        const rq = await customerCareService.quoteRentalBooking({
+          city_id: Number(cityId),
+          customer_id: customerId ? parseInt(customerId, 10) : null,
+          vehicle_class: rateClass,
+          rental_type: rentalType,
+          hours: Number(dutyHours || 0),
+          km: Number(dutyKm || 0),
+          days: rentalType === "DAILY" ? Math.max(1, pkgDays) : 1,
+          returned_after_midnight: afterMidnight,
+          pickup_datetime: pickupDt.toISOString(),
+        });
+        if (seq === quoteSeq.current) setRentalQuote(rq);
+        return;
+      }
       const q = await customerCareService.quoteCabBooking({
         city_id: Number(cityId),
         vehicle_category_id: Number(vcatId),
         trip_type: tripType,
         pickup_location: pickup.address.trim(),
         drop_location: drop.address.trim(),
+        stops: stops.map(name => ({ name })),
         pickup_datetime: pickupDt.toISOString(),
         return_datetime: tripType === "ROUND_TRIP" && returnDt ? returnDt.toISOString() : null,
         customer_id: customerId ? parseInt(customerId, 10) : null,
@@ -262,18 +414,100 @@ export default function CabBookingPage() {
     }
   }
 
+  // The admin's switches decide which products this desk may sell. The
+  // backend enforces the same list; filtering here keeps the agent from
+  // filling a form that can only end in a rejection.
+  const enabledTripCodes = meta?.trip_types?.length
+    ? new Set(meta.trip_types.filter(t => t.enabled).map(t => t.code))
+    : null;
+  const availableTripTypes = TRIP_TYPES.filter(
+    tt => !enabledTripCodes || enabledTripCodes.has(tt.value),
+  );
+  const rentalTypeAvailable = (value: string) =>
+    !enabledTripCodes ||
+    (RENTAL_TYPE_COVERS[value] ?? []).some(code => enabledTripCodes.has(code));
+  const availableRentalTypes = RENTAL_TYPES.filter(rt =>
+    rentalTypeAvailable(rt.value),
+  );
+
   const selectedVcat = meta?.vehicle_categories.find(v => v.id === vcatId);
   const selectedCity = meta?.cities.find(c => c.id === cityId);
   const selectedTrip = TRIP_TYPES.find(t => t.value === tripType);
 
   const selectedCoupon = quote?.coupons.find(c => c.coupon_code === couponCode) ?? null;
   const quoteTotal = quote ? num(quote.total) : null;
-  const payableAmount = selectedCoupon ? num(selectedCoupon.final_amount) : quoteTotal;
+  const packageTotal = rentalQuote ? num(rentalQuote.total) : null;
+  const standardTotal = rentalQuote ? num(rentalQuote.standard.total) : null;
+  const hasCustomPrice = !!rentalQuote?.custom_applied;
+  const payableAmount = selectedCoupon
+    ? num(selectedCoupon.final_amount)
+    : pricingMode === "PACKAGE" ? packageTotal : quoteTotal;
+
+  // If the admin disables the selected product (or all types in a package
+  // group), clear the stale choice instead of submitting a disabled booking.
+  useEffect(() => {
+    if (!meta?.trip_types?.length) return;
+    const enabled = new Set(
+      meta.trip_types.filter(t => t.enabled).map(t => t.code),
+    );
+    if (tripType && !enabled.has(tripType)) {
+      setTripType("");
+      setStep(0);
+    }
+    if (
+      rentalType &&
+      !(RENTAL_TYPE_COVERS[rentalType] ?? []).some(code => enabled.has(code))
+    ) {
+      const fallback = RENTAL_TYPES.find(rt =>
+        (RENTAL_TYPE_COVERS[rt.value] ?? []).some(code => enabled.has(code)),
+      );
+      setRentalType(fallback?.value ?? "");
+    }
+  }, [meta, tripType, rentalType]);
 
   // ── Step validation ───────────────────────────────────────────
   function step1Valid() { return cityId !== "" && tripType !== ""; }
+  function packageReady() {
+    return !!rateClass && !!rentalType && Number(dutyHours) > 0 && Number(dutyKm) > 0;
+  }
   function step2Valid() {
-    return vcatId !== "" && !!pickup.address.trim() && !!drop.address.trim() && !!pickupDt;
+    if (!pickup.address.trim() || !drop.address.trim() || !pickupDt) return false;
+    return pricingMode === "PACKAGE" ? packageReady() : vcatId !== "";
+  }
+  // A package quote carries blocking reasons; the booking button stays shut while
+  // any exist, because the server would refuse it anyway.
+  const quoteBookable = pricingMode === "PACKAGE"
+    ? !!rentalQuote && rentalQuote.can_book
+    : !!quote;
+  const packageErrors = rentalQuote
+    ? rentalQuote.validations.filter(v => v.severity === "ERROR")
+    : [];
+
+  // ── Agree a customer price for the quoted package ─────────────
+  async function handleCustomSave() {
+    if (!rentalQuote || !customerId) return;
+    const anyPrice = customPrice || customExtraHour || customExtraKm;
+    if (!anyPrice) { setCustomError("Set at least one price."); return; }
+    setCustomSaving(true); setCustomError("");
+    try {
+      await customerCareService.createCustomQuote({
+        customer_id: parseInt(customerId, 10),
+        city_id: Number(cityId),
+        vehicle_class: rentalQuote.vehicle_class,
+        rental_type: rentalQuote.rental_type,
+        included_hours: rentalQuote.package.included_hours,
+        package_price: customPrice || null,
+        extra_hour_rate: customExtraHour || null,
+        extra_km_rate: customExtraKm || null,
+        reason: customReason || null,
+      });
+      setCustomOpen(false);
+      setCustomPrice(""); setCustomExtraHour(""); setCustomExtraKm(""); setCustomReason("");
+      // Re-quote from the server so the discount on screen is the one stored.
+      await handleQuote();
+    } catch (e: any) {
+      setCustomError(apiErrorMessage(e, "Could not save the customer price"));
+    } finally { setCustomSaving(false); }
   }
 
   // ── Map pick handlers ─────────────────────────────────────────
@@ -287,20 +521,36 @@ export default function CabBookingPage() {
 
   // ── Submit ────────────────────────────────────────────────────
   async function handleSubmit() {
-    if (!customerId || !cityId || !tripType || !vcatId || !pickup.address || !drop.address || !pickupDt || !quote) return;
+    if (!customerId || !cityId || !tripType || !pickup.address || !drop.address || !pickupDt) return;
+    if ((tripCheck?.errors.length ?? 0) > 0) {
+      setError(tripCheck!.errors[0]);
+      setStep(1);
+      return;
+    }
+    if (pricingMode === "PACKAGE" ? !rentalQuote?.can_book : !quote || !vcatId) return;
     setSubmitting(true); setError("");
     try {
       const result = await customerCareService.createCabBooking({
         customer_id: parseInt(customerId, 10),
         city_id: Number(cityId),
-        trip_type: tripType,
-        vehicle_category_id: Number(vcatId),
+        trip_type: pricingMode === "PACKAGE" ? rentalType : tripType,
+        pricing_mode: pricingMode,
+        ...(pricingMode === "PACKAGE"
+          ? {
+              vehicle_class: rateClass,
+              hours: Number(dutyHours || 0),
+              km: Number(dutyKm || 0),
+              days: rentalType === "DAILY" ? Math.max(1, pkgDays) : 1,
+              returned_after_midnight: afterMidnight,
+            }
+          : { vehicle_category_id: Number(vcatId) }),
         pickup_location: pickup.address.trim(),
         pickup_latitude:  pickup.lat   ?? undefined,
         pickup_longitude: pickup.lng   ?? undefined,
         drop_location: drop.address.trim(),
         drop_latitude:  drop.lat   ?? undefined,
         drop_longitude: drop.lng   ?? undefined,
+        stops: stops.map(name => ({ name })),
         pickup_datetime: pickupDt.toISOString(),
         return_datetime: tripType === "ROUND_TRIP" && returnDt ? returnDt.toISOString() : null,
         coupon_code: selectedCoupon?.coupon_code ?? null,
@@ -476,12 +726,42 @@ export default function CabBookingPage() {
                   </Select>
                 </FormControl>
 
+                {/* Pricing mode — which sheet answers */}
+                <Typography fontWeight={600} fontSize={12} color="text.secondary" mb={1} letterSpacing={0.5}>
+                  PRICING
+                </Typography>
+                <ToggleButtonGroup
+                  value={pricingMode}
+                  exclusive
+                  onChange={(_e, v) => { if (v) setPricingMode(v); }}
+                  size="small"
+                  sx={{ mb: 3, "& .MuiToggleButton-root": { textTransform: "none", fontWeight: 700, px: 2.5 } }}
+                >
+                  <ToggleButton value="PACKAGE">
+                    <LocalOffer sx={{ fontSize: 18, mr: 1 }} /> Package rate card
+                  </ToggleButton>
+                  <ToggleButton value="PER_KM">
+                    <Route sx={{ fontSize: 18, mr: 1 }} /> Per-km quote
+                  </ToggleButton>
+                </ToggleButtonGroup>
+                <Typography variant="caption" color="text.secondary" display="block" mt={-2} mb={3}>
+                  {pricingMode === "PACKAGE"
+                    ? "Priced from the supplier rate card: fixed hours + kilometres, with overflow at the class's extra-hour and extra-km rates."
+                    : "Priced by distance: base fare + per-km rate + the sheet's allowances. Legacy mode, kept for trips the card does not cover."}
+                </Typography>
+
                 {/* Trip type cards */}
                 <Typography fontWeight={600} fontSize={12} color="text.secondary" mb={1.5} letterSpacing={0.5}>
                   TRIP TYPE *
                 </Typography>
+                {availableTripTypes.length === 0 && (
+                  <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                    No cab booking types are enabled. An administrator can turn
+                    them on in Settings → Cab Booking.
+                  </Alert>
+                )}
                 <Grid container spacing={1.5}>
-                  {TRIP_TYPES.map(tt => (
+                  {availableTripTypes.map(tt => (
                     <Grid item xs={6} sm={4} lg={2.4} key={tt.value}>
                       <Card
                         variant="outlined"
@@ -533,7 +813,172 @@ export default function CabBookingPage() {
             ══════════════════════════════════════════════════ */}
             {step === 1 && (
               <Stack gap={2.5}>
+                {/* ── Package panel: class, rental type, package, duty ── */}
+                {pricingMode === "PACKAGE" && (
+                  <Paper variant="outlined" sx={{ p: { xs: 2.5, sm: 3.5 }, borderRadius: 3 }}>
+                    <Stack direction="row" alignItems="center" gap={1} mb={2.5}>
+                      <Box sx={{
+                        width: 36, height: 36, borderRadius: 2,
+                        bgcolor: alpha("#F59E0B", 0.12),
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <LocalOffer sx={{ color: "#F59E0B", fontSize: 20 }} />
+                      </Box>
+                      <Box flex={1}>
+                        <Typography fontWeight={700} fontSize={15}>Package & Vehicle Class</Typography>
+                        <Typography fontSize={11.5} color="text.secondary">
+                          Prices come from the rate card{rateCard?.classes.some(c => c.rate_source === "PLATFORM") ? " (platform default where this city has none)" : " for this city"}.
+                        </Typography>
+                      </Box>
+                    </Stack>
+
+                    {rateCardError && (
+                      <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{rateCardError}</Alert>
+                    )}
+
+                    {/* Rental type */}
+                    <Typography fontWeight={600} fontSize={12} color="text.secondary" mb={1} letterSpacing={0.5}>
+                      RENTAL TYPE *
+                    </Typography>
+                    {availableRentalTypes.length === 0 && (
+                      <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                        Package pricing has no enabled cab type to sell. Turn one
+                        on in Settings → Cab Booking or use Per-km quote.
+                      </Alert>
+                    )}
+                    <Grid container spacing={1} mb={2.5}>
+                      {availableRentalTypes.map(rt => {
+                        const active = rentalType === rt.value;
+                        return (
+                          <Grid item xs={12} sm={4} key={rt.value}>
+                            <Paper
+                              variant="outlined"
+                              onClick={() => { setRentalType(rt.value); setDutyHours(""); setDutyKm(""); setPkgDays(1); }}
+                              sx={{
+                                p: 1.5, borderRadius: 2, cursor: "pointer",
+                                borderColor: active ? "#F59E0B" : "divider",
+                                borderWidth: active ? 2 : 1,
+                                bgcolor: active ? alpha("#F59E0B", 0.06) : "background.paper",
+                              }}
+                            >
+                              <Typography fontWeight={700} fontSize={12.5}>{rt.label}</Typography>
+                              <Typography fontSize={11} color="text.secondary">{rt.desc}</Typography>
+                            </Paper>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+
+                    {/* Vehicle class */}
+                    <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
+                      <InputLabel>Vehicle class *</InputLabel>
+                      <Select
+                        value={rateClass}
+                        onChange={e => { setRateClass(String(e.target.value)); setDutyHours(""); setDutyKm(""); }}
+                        label="Vehicle class *"
+                        sx={{ borderRadius: 2 }}
+                      >
+                        {(rateCard?.classes ?? []).map(c => {
+                          const p = c.packages.find(x => x.rental_type === rentalType);
+                          return (
+                            <MenuItem key={c.vehicle_class} value={c.vehicle_class}>
+                              <Stack direction="row" justifyContent="space-between" width="100%" gap={2}>
+                                <span>{c.label}{c.seating_capacity ? ` · ${c.seating_capacity} seats` : ""}</span>
+                                <span style={{ color: "#6B7280" }}>
+                                  {p ? `₹${num(p.price).toLocaleString("en-IN")}` : `no ${rentalType.toLowerCase()} rate`}
+                                </span>
+                              </Stack>
+                            </MenuItem>
+                          );
+                        })}
+                      </Select>
+                    </FormControl>
+
+                    {rateClass && (
+                      <>
+                        {/* Package chooser — clicking a package sets the duty */}
+                        <Typography fontWeight={600} fontSize={12} color="text.secondary" mb={1} letterSpacing={0.5}>
+                          PACKAGE
+                        </Typography>
+                        <Stack direction="row" gap={1} flexWrap="wrap" mb={2.5}>
+                          {classPackages.map(p => {
+                            const active = Number(dutyHours) === p.included_hours && Number(dutyKm) === p.included_km;
+                            return (
+                              <Paper
+                                key={p.rate_id}
+                                variant="outlined"
+                                onClick={() => { setDutyHours(p.included_hours); setDutyKm(p.included_km); }}
+                                sx={{
+                                  px: 1.5, py: 1, borderRadius: 2, cursor: "pointer",
+                                  borderColor: active ? "#22C55E" : "divider",
+                                  borderWidth: active ? 2 : 1,
+                                  bgcolor: active ? alpha("#22C55E", 0.06) : "background.paper",
+                                }}
+                              >
+                                <Typography fontSize={12.5} fontWeight={700}>
+                                  {p.included_hours}h / {p.included_km}km
+                                </Typography>
+                                <Typography fontSize={11.5} color={active ? "#16A34A" : "text.secondary"}>
+                                  ₹{num(p.price).toLocaleString("en-IN")}
+                                </Typography>
+                                {p.custom?.applies && (
+                                  <Chip
+                                    size="small"
+                                    label={`Agreed ₹${num(p.custom.package_price ?? p.price).toLocaleString("en-IN")}`}
+                                    sx={{ mt: 0.5, height: 18, fontSize: 10, fontWeight: 700, bgcolor: alpha("#6366F1", 0.12), color: "#4F46E5" }}
+                                  />
+                                )}
+                              </Paper>
+                            );
+                          })}
+                        </Stack>
+
+                        {/* Duty the customer described */}
+                        <Grid container spacing={2}>
+                          <Grid item xs={6} sm={3}>
+                            <TextField
+                              label={rentalType === "DAILY" ? "Hours per day" : "Duty hours"}
+                              type="number" size="small" fullWidth
+                              value={dutyHours}
+                              onChange={e => setDutyHours(e.target.value === "" ? "" : Number(e.target.value))}
+                              inputProps={{ min: 0, step: 1 }}
+                            />
+                          </Grid>
+                          <Grid item xs={6} sm={3}>
+                            <TextField
+                              label={rentalType === "DAILY" ? "Km per day" : "Duty km"}
+                              type="number" size="small" fullWidth
+                              value={dutyKm}
+                              onChange={e => setDutyKm(e.target.value === "" ? "" : Number(e.target.value))}
+                              inputProps={{ min: 0, step: 1 }}
+                            />
+                          </Grid>
+                          {rentalType === "DAILY" && (
+                            <Grid item xs={6} sm={2}>
+                              <TextField
+                                label="Days" type="number" size="small" fullWidth
+                                value={pkgDays}
+                                onChange={e => setPkgDays(Math.max(1, Number(e.target.value) || 1))}
+                                inputProps={{ min: 1, max: 30 }}
+                              />
+                            </Grid>
+                          )}
+                          {rentalType === "OUTSTATION" && (
+                            <Grid item xs={12} sm={4} display="flex" alignItems="center">
+                              <FormControlLabel
+                                control={<Switch checked={afterMidnight} onChange={e => setAfterMidnight(e.target.checked)} size="small" />}
+                                label={<Typography fontSize={12}>Returns after midnight</Typography>}
+                              />
+                            </Grid>
+                          )}
+                        </Grid>
+                      </>
+                    )}
+                  </Paper>
+                )}
+
                 {/* ── Vehicle selection panel ── */}
+                {pricingMode === "PER_KM" && (
                 <Paper variant="outlined" sx={{ p: { xs: 2.5, sm: 3.5 }, borderRadius: 3 }}>
                   <Stack direction="row" alignItems="center" gap={1} mb={2.5}>
                     <Box sx={{
@@ -607,6 +1052,7 @@ export default function CabBookingPage() {
                     })}
                   </Grid>
                 </Paper>
+                )}
 
                 {/* ── Route & schedule panel ── */}
                 <Paper variant="outlined" sx={{ p: { xs: 2.5, sm: 3.5 }, borderRadius: 3 }}>
@@ -683,6 +1129,98 @@ export default function CabBookingPage() {
                       )}
                     </Box>
 
+                    {/* Stops — places visited on the way */}
+                    <Box>
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" mb={1}>
+                        <Typography fontWeight={600} fontSize={12} color="text.secondary" letterSpacing={0.5}>
+                          STOPS{tripCheckLoading ? " …" : ""}
+                        </Typography>
+                        <Typography fontSize={10.5} color="text.secondary">
+                          Each stop adds its own kilometres
+                        </Typography>
+                      </Stack>
+                      {stops.length > 0 && (
+                        <Stack gap={1} mb={1}>
+                          {stops.map((s, i) => (
+                            <Stack key={`${s}-${i}`} direction="row" alignItems="center" gap={1}>
+                              <Typography fontSize={11} fontWeight={700} color="text.secondary" sx={{ width: 16 }}>
+                                {i + 1}
+                              </Typography>
+                              <TextField
+                                size="small" fullWidth value={s}
+                                onChange={e => setStops(prev => prev.map((v, j) => j === i ? e.target.value : v))}
+                                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                              />
+                              <IconButton size="small" onClick={() => setStops(prev => prev.filter((_, j) => j !== i))}>
+                                <ErrorOutline fontSize="small" sx={{ color: "error.main", transform: "rotate(45deg)" }} />
+                              </IconButton>
+                            </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                      <Stack direction="row" gap={1}>
+                        <TextField
+                          size="small" fullWidth value={newStop}
+                          onChange={e => setNewStop(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter" && newStop.trim()) {
+                              e.preventDefault();
+                              setStops(prev => [...prev, newStop.trim()]);
+                              setNewStop("");
+                            }
+                          }}
+                          placeholder="e.g. Konark"
+                          sx={{ "& .MuiOutlinedInput-root": { borderRadius: 2 } }}
+                        />
+                        <Button
+                          variant="outlined"
+                          disabled={!newStop.trim()}
+                          onClick={() => {
+                            if (!newStop.trim()) return;
+                            setStops(prev => [...prev, newStop.trim()]);
+                            setNewStop("");
+                          }}
+                          sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700, whiteSpace: "nowrap" }}
+                        >
+                          Add stop
+                        </Button>
+                      </Stack>
+                      {tripCheck && (
+                        <Alert
+                          severity={tripCheck.errors.length ? "error" : "info"}
+                          sx={{ mt: 1.5, borderRadius: 2 }}
+                          action={
+                            tripCheck.detected_type && tripCheck.detected_type !== tripType ? (
+                              <Button
+                                color="inherit" size="small"
+                                onClick={() => setTripType(tripCheck.detected_type!)}
+                                sx={{ textTransform: "none", fontWeight: 700 }}
+                              >
+                                Use {tripCheck.detected_type.replace("_", " ")}
+                              </Button>
+                            ) : undefined
+                          }
+                        >
+                          <Typography fontSize={12} fontWeight={tripCheck.errors.length ? 600 : 400}>
+                            {tripCheck.errors[0]
+                              ?? (tripCheck.cities.length
+                                ? `Route: ${tripCheck.cities.join(" → ")}`
+                                : "Route not placed in a city yet.")}
+                          </Typography>
+                          {tripCheck.duration.minutes != null && (
+                            <Typography fontSize={11} color="text.secondary">
+                              Approx {Math.floor(tripCheck.duration.minutes / 60)}h{" "}
+                              {String(tripCheck.duration.minutes % 60).padStart(2, "0")}m drive
+                              {tripCheck.distance_km != null ? ` over ${tripCheck.distance_km} km` : ""}
+                            </Typography>
+                          )}
+                          {!(tripCheck.errors.length) && [...tripCheck.warnings, ...tripCheck.hints].slice(0, 2).map(m => (
+                            <Typography key={m} fontSize={11} color="text.secondary">{m}</Typography>
+                          ))}
+                        </Alert>
+                      )}
+                    </Box>
+
                     {/* Pickup datetime */}
                     <DateTimePicker
                       label="Pickup Date & Time *"
@@ -718,7 +1256,7 @@ export default function CabBookingPage() {
                       <Button
                         variant="outlined"
                         onClick={handleQuote}
-                        disabled={!step2Valid() || quoteLoading}
+                        disabled={!step2Valid() || quoteLoading || (tripCheck?.errors.length ?? 0) > 0}
                         startIcon={quoteLoading ? <CircularProgress size={16} /> : <Calculate />}
                         sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700 }}
                       >
@@ -736,8 +1274,131 @@ export default function CabBookingPage() {
                     </Box>
                   </Stack>
 
+                  {/* ── Package quote panel: card price vs customer price ── */}
+                  {pricingMode === "PACKAGE" && rentalQuote && (
+                    <Box sx={{
+                      mt: 2.5, p: 2.5, borderRadius: 2.5,
+                      background: `linear-gradient(135deg, ${alpha("#22C55E", 0.06)}, ${alpha("#16A34A", 0.04)})`,
+                      border: "1px solid", borderColor: alpha("#22C55E", 0.25),
+                    }}>
+                      <Stack direction="row" alignItems="flex-start" gap={2} mb={1.5}>
+                        <Box sx={{
+                          width: 44, height: 44, borderRadius: 2,
+                          bgcolor: alpha("#22C55E", 0.15),
+                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        }}>
+                          <Calculate sx={{ color: "#22C55E", fontSize: 22 }} />
+                        </Box>
+                        <Box flex={1}>
+                          <Typography fontSize={12} fontWeight={600} color="text.secondary">
+                            {hasCustomPrice ? "CUSTOMER PRICE" : "PACKAGE PRICE"}
+                          </Typography>
+                          <Stack direction="row" alignItems="baseline" gap={1} flexWrap="wrap">
+                            <Typography fontWeight={900} fontSize={28} color="#22C55E" lineHeight={1}>
+                              ₹{packageTotal!.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                            </Typography>
+                            <Typography fontSize={12} color="text.secondary">
+                              {rentalQuote.vehicle_label} · {rentalQuote.package.included_hours}h / {rentalQuote.package.included_km}km
+                              {rentalQuote.package.days > 1 ? ` × ${rentalQuote.package.days} days` : ""}
+                              {" · "}{rentalQuote.rate_source === "CITY" ? "city rate card" : "platform rate card"}
+                            </Typography>
+                          </Stack>
+                          {hasCustomPrice && standardTotal != null && (
+                            <Stack direction="row" alignItems="center" gap={0.75} mt={0.5}>
+                              <Typography fontSize={12} color="text.secondary" sx={{ textDecoration: "line-through" }}>
+                                ₹{standardTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })} standard
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={packageTotal! < standardTotal
+                                  ? `₹${(standardTotal - packageTotal!).toLocaleString("en-IN", { maximumFractionDigits: 2 })} below card`
+                                  : `₹${(packageTotal! - standardTotal).toLocaleString("en-IN", { maximumFractionDigits: 2 })} above card`}
+                                sx={{ height: 20, fontSize: 10.5, fontWeight: 700, bgcolor: alpha("#6366F1", 0.12), color: "#4F46E5" }}
+                              />
+                            </Stack>
+                          )}
+                        </Box>
+                        <Button
+                          size="small" variant="outlined" startIcon={<Tune />}
+                          onClick={() => {
+                            setCustomPrice(rentalQuote.custom_quote?.package_price != null
+                              ? String(rentalQuote.custom_quote.package_price) : "");
+                            setCustomExtraHour(rentalQuote.custom_quote?.extra_hour_rate != null
+                              ? String(rentalQuote.custom_quote.extra_hour_rate) : "");
+                            setCustomExtraKm(rentalQuote.custom_quote?.extra_km_rate != null
+                              ? String(rentalQuote.custom_quote.extra_km_rate) : "");
+                            setCustomReason(rentalQuote.custom_quote?.reason ?? "");
+                            setCustomError("");
+                            setCustomOpen(true);
+                          }}
+                          sx={{ borderRadius: 2, textTransform: "none", fontWeight: 700, flexShrink: 0 }}
+                        >
+                          {hasCustomPrice ? "Edit agreed price" : "Set customer price"}
+                        </Button>
+                      </Stack>
+
+                      {/* Card vs customer, line by line */}
+                      <Table size="small" sx={{ bgcolor: "transparent", "& td, & th": { borderColor: alpha("#22C55E", 0.18), py: 0.5 } }}>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ pl: 0, fontSize: 11, fontWeight: 700 }}>Line</TableCell>
+                            <TableCell align="right" sx={{ fontSize: 11, fontWeight: 700 }}>Rate card</TableCell>
+                            <TableCell align="right" sx={{ fontSize: 11, fontWeight: 700 }}>
+                              {hasCustomPrice ? "Customer" : "Applied"}
+                            </TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {rentalQuote.lines.map(line => (
+                            <TableRow key={line.label}>
+                              <TableCell sx={{ pl: 0, fontSize: 12, color: line.label === "Total" ? "text.primary" : "text.secondary", fontWeight: line.label === "Total" ? 800 : 400 }}>
+                                {line.label}
+                              </TableCell>
+                              <TableCell align="right" sx={{
+                                fontSize: 12,
+                                color: "text.secondary",
+                                textDecoration: line.changed ? "line-through" : "none",
+                              }}>
+                                ₹{num(line.standard).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontSize: 12, fontWeight: line.changed || line.label === "Total" ? 800 : 500, color: line.changed ? "#4F46E5" : "text.primary" }}>
+                                ₹{num(line.applied).toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+
+                      <Stack gap={0.75} mt={1.5}>
+                        {rentalQuote.validations.map(v => (
+                          <Box key={v.code + v.message} sx={{ display: "flex", gap: 0.75, alignItems: "flex-start" }}>
+                            {v.severity === "ERROR" ? (
+                              <ErrorOutline sx={{ fontSize: 14, color: "error.main", mt: "2px" }} />
+                            ) : v.severity === "WARNING" ? (
+                              <Warning sx={{ fontSize: 14, color: "warning.main", mt: "2px" }} />
+                            ) : (
+                              <Info sx={{ fontSize: 14, color: "text.disabled", mt: "2px" }} />
+                            )}
+                            <Typography
+                              fontSize={11.5}
+                              color={v.severity === "ERROR" ? "error.main" : v.severity === "WARNING" ? "warning.dark" : "text.secondary"}
+                            >
+                              {v.message}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Stack>
+
+                      {rentalQuote.custom_quote && !rentalQuote.custom_applied && (
+                        <Typography fontSize={11} color="warning.main" mt={1}>
+                          Agreed price on file is not valid for this trip date; the rate card applies.
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+
                   {/* ── Quoted fare card ── */}
-                  {quote && (
+                  {pricingMode === "PER_KM" && quote && (
                     <Box sx={{
                       mt: 2.5, p: 2.5, borderRadius: 2.5,
                       background: `linear-gradient(135deg, ${alpha("#22C55E", 0.06)}, ${alpha("#16A34A", 0.04)})`,
@@ -861,18 +1522,20 @@ export default function CabBookingPage() {
                       ← Back
                     </Button>
                     <Stack alignItems="flex-end" gap={0.5}>
-                      <Button variant="contained" disabled={!step2Valid() || !quote} onClick={() => setStep(2)}
+                      <Button variant="contained" disabled={!step2Valid() || !quoteBookable} onClick={() => setStep(2)}
                         sx={{
                           borderRadius: 2, textTransform: "none", fontWeight: 700, px: 3.5,
-                          background: step2Valid() && quote
+                          background: step2Valid() && quoteBookable
                             ? `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`
                             : undefined,
                         }}>
                         Review Booking →
                       </Button>
-                      {!quote && step2Valid() && (
-                        <Typography variant="caption" color="text.secondary">
-                          Get the fare above to review this booking.
+                      {!quoteBookable && step2Valid() && (
+                        <Typography variant="caption" color={pricingMode === "PACKAGE" && packageErrors.length ? "error.main" : "text.secondary"}>
+                          {pricingMode === "PACKAGE" && packageErrors.length
+                            ? "Fix the errors above before booking."
+                            : "Get the fare above to review this booking."}
                         </Typography>
                       )}
                     </Stack>
@@ -902,7 +1565,10 @@ export default function CabBookingPage() {
                   {[
                     ["City",         selectedCity?.name],
                     ["Trip Type",    selectedTrip?.label],
-                    ["Vehicle",      selectedVcat?.category_name],
+                    ["Pricing",      pricingMode === "PACKAGE" ? "Package rate card" : "Per-km quote"],
+                    pricingMode === "PACKAGE"
+                      ? ["Vehicle class", selectedClass?.label ?? rateClass]
+                      : ["Vehicle", selectedVcat?.category_name],
                     ["Pickup",       pickup.address],
                     pickup.lat ? ["Pickup Coords", `${pickup.lat.toFixed(5)}, ${pickup.lng!.toFixed(5)}`] : null,
                     ["Drop",         drop.address],
@@ -911,11 +1577,20 @@ export default function CabBookingPage() {
                     tripType === "ROUND_TRIP" && returnDt
                       ? ["Return", format(returnDt, "dd MMM yyyy, hh:mm aa")]
                       : null,
-                    quote
+                    pricingMode === "PER_KM" && quote
                       ? ["Distance", `${num(quote.distance_km).toLocaleString("en-IN", { maximumFractionDigits: 1 })} km · ${distanceSourceLabel(quote.distance_source)}`]
                       : null,
-                    quote
+                    pricingMode === "PACKAGE" && rentalQuote
+                      ? ["Package", `${rentalQuote.package.included_hours}h / ${rentalQuote.package.included_km}km${rentalQuote.package.days > 1 ? ` × ${rentalQuote.package.days} days` : ""} · duty ${num(rentalQuote.hours)}h / ${num(rentalQuote.km)}km`]
+                      : null,
+                    pricingMode === "PER_KM" && quote
                       ? ["Quoted Fare", `₹${num(quote.total).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
+                      : null,
+                    pricingMode === "PACKAGE" && rentalQuote
+                      ? ["Rate card price", `₹${num(rentalQuote.standard.total).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
+                      : null,
+                    pricingMode === "PACKAGE" && rentalQuote?.custom_applied
+                      ? ["Customer price", `₹${num(rentalQuote.applied.total).toLocaleString("en-IN", { maximumFractionDigits: 2 })} · agreed${rentalQuote.custom_quote?.reason ? ` — ${rentalQuote.custom_quote.reason}` : ""}`]
                       : null,
                     selectedCoupon
                       ? ["Coupon", `${selectedCoupon.coupon_code} · − ₹${num(selectedCoupon.discount_amount).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`]
@@ -964,6 +1639,58 @@ export default function CabBookingPage() {
           </>
         )}
       </Box>
+
+      {/* ── Agreed customer price dialog ────────────────────── */}
+      <Dialog open={customOpen} onClose={() => setCustomOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, fontSize: 16 }}>
+          Agreed price for this customer
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="caption" color="text.secondary" display="block" mb={2}>
+            {rentalQuote?.vehicle_label} · {rentalQuote?.rental_type} {rentalQuote?.package.included_hours}h / {rentalQuote?.package.included_km}km.
+            Leave a field blank to keep the rate-card value; the booking will store both prices.
+          </Typography>
+          <Stack gap={2}>
+            <TextField
+              label="Package price (₹)" type="number" size="small" fullWidth
+              value={customPrice} onChange={e => setCustomPrice(e.target.value)}
+              helperText={rentalQuote ? `Rate card: ₹${num(rentalQuote.standard.package_price).toLocaleString("en-IN")}` : undefined}
+            />
+            <TextField
+              label="Extra hour rate (₹)" type="number" size="small" fullWidth
+              value={customExtraHour} onChange={e => setCustomExtraHour(e.target.value)}
+              helperText={rentalQuote ? `Rate card: ₹${num(rentalQuote.standard.extra_hour_rate).toLocaleString("en-IN")}/hour` : undefined}
+            />
+            <TextField
+              label="Extra km rate (₹)" type="number" size="small" fullWidth
+              value={customExtraKm} onChange={e => setCustomExtraKm(e.target.value)}
+              helperText={rentalQuote ? `Rate card: ₹${num(rentalQuote.standard.extra_km_rate).toLocaleString("en-IN")}/km` : undefined}
+            />
+            <TextField
+              label="Reason / reference" size="small" fullWidth
+              value={customReason} onChange={e => setCustomReason(e.target.value)}
+              placeholder="e.g. Annual contract, corporate account"
+            />
+            {customError && <Alert severity="error" sx={{ borderRadius: 2 }}>{customError}</Alert>}
+            <Alert severity="info" sx={{ borderRadius: 2, py: 0.5 }}>
+              <Typography variant="caption">
+                Applies to this package only, for this customer. The rate card stays the
+                standard and the difference is shown on every quote and stored on the booking.
+              </Typography>
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setCustomOpen(false)} sx={{ textTransform: "none" }}>Cancel</Button>
+          <Button
+            variant="contained" onClick={handleCustomSave} disabled={customSaving}
+            startIcon={customSaving ? <CircularProgress size={16} color="inherit" /> : <LocalOffer />}
+            sx={{ textTransform: "none", fontWeight: 700, borderRadius: 2 }}
+          >
+            {customSaving ? "Saving…" : "Save agreed price"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Map Picker Modals ───────────────────────────────── */}
       {mapsOk && (

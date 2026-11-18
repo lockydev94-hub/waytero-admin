@@ -59,9 +59,10 @@ import {
 const SECTION_HINT: Record<string, string> = {
   HERO:          "Full-width banner at the very top of the homepage.",
   SERVICES:      "Grid of service cards (Cabs / Hotels / Tours).",
+  RIDE_TYPES:    "Row of cab trip-type cards (local, airport, one-way, outstation, round trip) under the services band.",
   WHY_US:        "Trust signals — why customers should choose WayTero.",
-  TOUR_PACKAGES: "Featured tour packages.",
-  TESTIMONIALS:  "Customer reviews / quotes.",
+  TOUR_PACKAGES: "Four-up tour-package cards with the \"View All Packages\" link. The cards themselves come from the Tours page — only the header copy and that link live here.",
+  TESTIMONIALS:  "Customer reviews / quotes. The heading, the aggregate stars and the prev/next controls sit in a left column beside the cards.",
   STATS:         "Big-number platform stats (rides, cities, partners).",
   PARTNERS:      "Showcase of partner brands / fleet operators.",
   CTA:           "Closing call-to-action banner.",
@@ -71,7 +72,7 @@ const SECTION_HINT: Record<string, string> = {
   POPULAR_CITIES: "City pills from the database, each linking to its published landing page.",
   HOW_IT_WORKS:  "Step-by-step guide to booking with WayTero.",
   FEATURED_HOTELS: "Handpicked partner hotels.",
-  FAQ:           "Accordion of frequently asked questions.",
+  FAQ:           "Accordion of frequently asked questions. Each question's Category groups it under a tab on the left of the band.",
   NEWSLETTER:    "Email-capture band.",
   APP_DOWNLOAD:  "Mobile app promo band.",
   BLOG:          "Latest travel-stories / blog band.",
@@ -86,9 +87,10 @@ const SECTION_HINT: Record<string, string> = {
 const SECTION_DEFAULT_TAG: Record<string, string> = {
   HERO:          "India's Travel Operating System",
   SERVICES:      "What we offer",
-  WHY_US:        "Why choose us",
-  TOUR_PACKAGES: "Curated experiences",
-  TESTIMONIALS:  "Loved by travelers",
+  RIDE_TYPES:    "",  // no eyebrow in this band's design
+  WHY_US:        "",  // no eyebrow — the heading sits inside the pastel panel
+  TOUR_PACKAGES: "",  // no eyebrow in this band's design (dashes flank the title)
+  TESTIMONIALS:  "",  // no eyebrow — the heading sits in the band's left column
   STATS:         "",  // was "Trusted across India" — a coverage claim the
                      // platform cannot prove; the band prints its own
                      // "By the numbers" instead (StatsSection.tsx:20).
@@ -98,9 +100,9 @@ const SECTION_DEFAULT_TAG: Record<string, string> = {
   POPULAR_DESTINATIONS: "Where to next",
   POPULAR_ROUTES: "Where people travel",
   POPULAR_CITIES: "Where we operate",
-  HOW_IT_WORKS:  "Simple & transparent",
+  HOW_IT_WORKS:  "",  // no eyebrow — orange dashes flank the title instead
   FEATURED_HOTELS: "Where to stay",
-  FAQ:           "Help centre",
+  FAQ:           "",  // no eyebrow — the heading sits between two orange dashes
   NEWSLETTER:    "Stay in the loop",
   APP_DOWNLOAD:  "On the go",
   BLOG:          "Travel stories",

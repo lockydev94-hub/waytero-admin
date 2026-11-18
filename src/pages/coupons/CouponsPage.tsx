@@ -612,8 +612,8 @@ export default function CouponsPage() {
             <Grid container spacing={2.5} sx={{ mt: 0.5 }}>
               <Grid item xs={12} sm={6}>
                 <FormControl fullWidth size="small">
-                  <InputLabel>Coupon Funding</InputLabel>
-                  <Select value={form.coupon_type} label="Coupon Funding" onChange={e => {
+                  <InputLabel id="coupon-funding-label">Coupon Funding</InputLabel>
+                  <Select labelId="coupon-funding-label" id="coupon-funding" value={form.coupon_type} label="Coupon Funding" onChange={e => {
                     const couponType = e.target.value as CouponType;
                     setForm(f => ({ ...f, coupon_type: couponType, platform_share_percent: couponType === "PLATFORM_PARTNER" ? 50 : null }));
                   }}>
@@ -674,16 +674,16 @@ export default function CouponsPage() {
 
               <Grid item xs={12} sm={4}>
                 <FormControl fullWidth size="small">
-                  <InputLabel>Applies To *</InputLabel>
-                  <Select value={form.apply_to} label="Applies To *" onChange={e => setForm(f => ({ ...f, apply_to: e.target.value }))}>
+                  <InputLabel id="coupon-apply-to-label">Applies To *</InputLabel>
+                  <Select labelId="coupon-apply-to-label" id="coupon-apply-to" value={form.apply_to} label="Applies To *" onChange={e => setForm(f => ({ ...f, apply_to: e.target.value }))}>
                     {APPLY_TO_OPTIONS.map(o => <MenuItem key={o} value={o}>{o}</MenuItem>)}
                   </Select>
                 </FormControl>
               </Grid>
               <Grid item xs={12} sm={4}>
                 <FormControl fullWidth size="small">
-                  <InputLabel>Discount Type *</InputLabel>
-                  <Select value={form.discount_type} label="Discount Type *" onChange={e => setForm(f => ({ ...f, discount_type: e.target.value }))}>
+                  <InputLabel id="coupon-discount-type-label">Discount Type *</InputLabel>
+                  <Select labelId="coupon-discount-type-label" id="coupon-discount-type" value={form.discount_type} label="Discount Type *" onChange={e => setForm(f => ({ ...f, discount_type: e.target.value }))}>
                     {DISCOUNT_TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
                   </Select>
                 </FormControl>
@@ -923,8 +923,8 @@ export default function CouponsPage() {
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <TextField size="small" label="Search partners on this page" value={partnerSearch} onChange={e => setPartnerSearch(e.target.value)} fullWidth />
                 <FormControl size="small" sx={{ minWidth: 160 }}>
-                  <InputLabel>Active service</InputLabel>
-                  <Select label="Active service" value={partnerServiceFilter} onChange={e => setPartnerServiceFilter(e.target.value)}>
+                  <InputLabel id="coupon-partner-service-label">Active service</InputLabel>
+                  <Select labelId="coupon-partner-service-label" id="coupon-partner-service" label="Active service" value={partnerServiceFilter} onChange={e => setPartnerServiceFilter(e.target.value)}>
                     <MenuItem value="">All services</MenuItem>
                     {SERVICE_TYPES.map(service => <MenuItem key={service} value={service}>{service}</MenuItem>)}
                   </Select>

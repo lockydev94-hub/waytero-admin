@@ -32,3 +32,6 @@ Thumbs.db
 
 # Generated image fixtures for _qa/upload-limits-qa.cjs (12 MB, regenerable)
 _qa/fixtures/
+
+# Local QA screenshots and result dumps (regenerable)
+_qa/shots/

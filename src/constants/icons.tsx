@@ -11,6 +11,7 @@ import {
   Build, SwapHoriz, Cancel, Gavel, Web, Article, Email, Forum,
   Receipt, PersonOff, MarkEmailRead, Campaign, AltRoute, Public,
   Description, ContactSupport, PhoneCallback, RateReview, Storefront,
+  PriceChange, SupportAgent,
 } from "@mui/icons-material";
 
 export const NAV_ICONS: Record<string, React.ReactNode> = {
@@ -49,4 +50,6 @@ export const NAV_ICONS: Record<string, React.ReactNode> = {
   PhoneCallback:      <PhoneCallback />,
   RateReview:         <RateReview />,
   Storefront:         <Storefront />,
+  PriceChange:        <PriceChange />,
+  SupportAgent:       <SupportAgent />,
 };

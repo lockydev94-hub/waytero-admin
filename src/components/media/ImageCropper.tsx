@@ -614,7 +614,10 @@ export default function AdvancedImageCropper({
           </IconButton>
         </Stack>
 
-        {(showPresetPicker || (outputSizeOptions ?? []).length > 0) && (
+        {/* A fixed output (outputWidth×outputHeight) wins over the size picker in
+            the export, so showing the picker next to it would offer a control
+            that changes nothing. Only offer sizes when there is no fixed output. */}
+        {(showPresetPicker || (!(outputWidth && outputHeight) && (outputSizeOptions ?? []).length > 0)) && (
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1} alignItems={{ xs: "stretch", sm: "center" }} justifyContent="space-between">
             {showPresetPicker && (
               <ToggleButtonGroup
@@ -630,7 +633,7 @@ export default function AdvancedImageCropper({
                 ))}
               </ToggleButtonGroup>
             )}
-            {(outputSizeOptions ?? []).length > 0 && (
+            {!(outputWidth && outputHeight) && (outputSizeOptions ?? []).length > 0 && (
               <ToggleButtonGroup
                 size="small"
                 exclusive
@@ -650,7 +653,13 @@ export default function AdvancedImageCropper({
         <Stack direction="row" alignItems="center" spacing={2}>
           <Typography variant="caption" color="text.secondary">
             {crop && imgSize
-              ? `Crop ${Math.round(crop.w)}×${Math.round(crop.h)} · Zoom ${zoom.toFixed(2)}× · Output ${outputSize > 0 ? `longest ${outputSize}px` : "source resolution"}`
+              ? `Crop ${Math.round(crop.w)}×${Math.round(crop.h)} · Zoom ${zoom.toFixed(2)}× · Output ${
+                  outputWidth && outputHeight
+                    ? `${outputWidth}×${outputHeight}`
+                    : outputSize > 0
+                      ? `longest ${outputSize}px`
+                      : "source resolution"
+                }`
               : "Loading image…"}
           </Typography>
           <Box flex={1} />

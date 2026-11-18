@@ -47,7 +47,7 @@ import {
 import { settingsService, City, State, ServiceTypeRecord } from "../../services/settings.service";
 import { walletService } from "../../services/wallet.service";
 import MediaPicker from "../../components/media/MediaPicker";
-import { mediaHint, uploadProblem } from "../../utils/mediaLimits";
+import { mediaHint } from "../../utils/mediaLimits";
 import { apiErrorMessage } from "../../utils/apiError";
 
 // ── States helper ─────────────────────────────────────────────────────────────
@@ -1811,7 +1811,11 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
   // Doc upload
   const [docType, setDocType] = useState<string>(DOCUMENT_TYPES[0] as string);
   const [docNumber, setDocNumber] = useState("");
+  // A KYC file is either picked from the Cloudinary library (docUrl, already
+  // uploaded) or chosen from disk (docFile, uploaded on submit). Never both.
+  const [docUrl, setDocUrl] = useState<string | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [docPickerOpen, setDocPickerOpen] = useState(false);
   const [docExpiry, setDocExpiry] = useState("");
   const [docUploading, setDocUploading] = useState(false);
 
@@ -1909,12 +1913,22 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
   });
 
   const handleDocUpload = async () => {
-    if (!docFile || !partner) { enqueueSnackbar("Please select a file", { variant: "warning" }); return; }
+    if (!partner) return;
+    if (!docFile && !docUrl) { enqueueSnackbar("Please select a file", { variant: "warning" }); return; }
     setDocUploading(true);
     try {
-      await partnerService.uploadDocument(partner.id, docFile, docType, docNumber || undefined, docExpiry || undefined);
-      enqueueSnackbar("Document uploaded successfully", { variant: "success" });
-      setDocFile(null); setDocNumber(""); setDocExpiry("");
+      if (docUrl) {
+        await partnerService.attachDocument(partner.id, {
+          file_url: docUrl,
+          document_type: docType,
+          document_number: docNumber || undefined,
+          expiry_date: docExpiry || undefined,
+        });
+      } else {
+        await partnerService.uploadDocument(partner.id, docFile!, docType, docNumber || undefined, docExpiry || undefined);
+      }
+      enqueueSnackbar(docUrl ? "Document attached from media library" : "Document uploaded successfully", { variant: "success" });
+      setDocFile(null); setDocUrl(null); setDocNumber(""); setDocExpiry("");
       refetch();
     } catch (e: any) {
       enqueueSnackbar(apiErrorMessage(e, "Upload failed"), { variant: "error" });
@@ -2461,31 +2475,23 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
                     </Grid>
                   )}
                   <Grid item xs={12} sm={docMeta.numberLabel ? 4 : 6}>
-                    <Button variant="outlined" component="label" size="small" startIcon={<CloudUpload />} fullWidth sx={{ height: 40 }}>
-                      {docFile ? docFile.name.slice(0, 18) + (docFile.name.length > 18 ? "…" : "") : "Select File"}
-                      <input hidden type="file" accept=".pdf,.jpg,.jpeg,.png"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] ?? null;
-                          if (!f) { setDocFile(null); return; }
-                          const problem = uploadProblem(f, "document");
-                          if (problem) {
-                            enqueueSnackbar(problem, { variant: "error" });
-                            e.target.value = "";
-                            setDocFile(null);
-                            return;
-                          }
-                          setDocFile(f);
-                        }} />
+                    <Button variant="outlined" size="small" startIcon={<CloudUpload />} fullWidth sx={{ height: 40 }}
+                      onClick={() => setDocPickerOpen(true)}>
+                      {docUrl
+                        ? "Asset selected"
+                        : docFile
+                        ? docFile.name.slice(0, 18) + (docFile.name.length > 18 ? "…" : "")
+                        : "Choose from Cloudinary"}
                     </Button>
                     <Typography variant="caption" color="text.disabled" sx={{ display: "block", mt: 0.5, fontSize: 10 }}>
-                      {mediaHint("document")}
+                      Pick an existing document or upload a new one · {mediaHint("document")}
                     </Typography>
                   </Grid>
                   <Grid item xs={12} sm={2}>
                     <Button variant="contained" fullWidth size="small" onClick={handleDocUpload}
-                      disabled={docUploading || !docFile} sx={{ height: 40 }}
+                      disabled={docUploading || (!docFile && !docUrl)} sx={{ height: 40 }}
                       startIcon={docUploading ? <CircularProgress size={14} /> : <CloudUpload />}>
-                      Upload
+                      Save
                     </Button>
                   </Grid>
                 </Grid>
@@ -2822,6 +2828,21 @@ function KycModal({ partnerId, onClose, onActionDone, cities }: KycModalProps) {
         uploadFolder="waytero/partners"
         kind="logo"
         title="Upload partner logo"
+      />
+
+      {/* KYC document — pick an existing asset or upload a new one. Documents
+          are not cropped, so no crop spec is passed. */}
+      <MediaPicker
+        open={docPickerOpen}
+        onClose={() => setDocPickerOpen(false)}
+        onSelect={(items) => {
+          if (items[0]) { setDocUrl(items[0].secure_url); setDocFile(null); }
+        }}
+        onUploaded={(result) => { setDocUrl(result.secure_url); setDocFile(null); }}
+        folder="waytero/partners/documents"
+        uploadFolder="waytero/partners/documents"
+        kind="document"
+        title={`Choose ${DOCUMENT_META[docType]?.label ?? "KYC"} document`}
       />
     </>
   );

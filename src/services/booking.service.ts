@@ -56,6 +56,9 @@ export interface CabBookingOut {
   /** Formatted tax-invoice number, set when payment is recorded. Drives the
    *  "Download Invoice (PDF)" button on CabBookingDetailPage. */
   invoice_number: string | null;
+  /** Coupon redeemed at booking time (snapshot, not the editable coupon). */
+  coupon_code?: string | null;
+  coupon_discount?: number | null;
   /** How the customer paid — UPI / CASH / WALLET / ONLINE. Required before
    *  the invoice can be downloaded. */
   payment_mode: string | null;

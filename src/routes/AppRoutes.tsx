@@ -35,7 +35,9 @@ const UsersPage                = lazy(() => import("../pages/users/UsersPage"));
 const SettingsPage             = lazy(() => import("../pages/settings/SettingsPage"));
 const CouponsPage              = lazy(() => import("../pages/coupons/CouponsPage"));
 const CustomerCarePage         = lazy(() => import("../pages/customer-care/CustomerCarePage"));
+const PartnerSupportPage       = lazy(() => import("../pages/partner-support/PartnerSupportPage"));
 const CabBookingPage           = lazy(() => import("../pages/customer-care/CabBookingPage"));
+const CabRateCardPage          = lazy(() => import("../pages/customer-care/CabRateCardPage"));
 const HotelBookingPage         = lazy(() => import("../pages/customer-care/HotelBookingPage"));
 const TourBookingPage          = lazy(() => import("../pages/customer-care/TourBookingPage"));
 const TripAssistancePage       = lazy(() => import("../pages/trip-assistance/TripAssistancePage"));
@@ -63,6 +65,7 @@ const ChatPage                  = lazy(() => import("../pages/chat/ChatPage"));
 const TaxGstPage                = lazy(() => import("../pages/tax/TaxGstPage"));
 const AccountDeletionPage       = lazy(() => import("../pages/accountDeletion/AccountDeletionRequestsPage"));
 const EmailLogsPage             = lazy(() => import("../pages/email/EmailLogsPage"));
+const EmailTemplatesPage        = lazy(() => import("../pages/email/EmailTemplatesPage"));
 const NoticesPage               = lazy(() => import("../pages/notices/NoticesPage"));
 const OnboardingDocsPage        = lazy(() => import("../pages/onboarding-docs/OnboardingDocsPage"));
 const ProfilePage               = lazy(() => import("../pages/profile/ProfilePage"));
@@ -120,6 +123,8 @@ export function AppRoutes() {
             <Route path="/settings"    element={<SettingsPage />} />
             <Route path="/coupons"     element={<CouponsPage />} />
             <Route path="/customer-care"                                    element={<CustomerCarePage />} />
+            <Route path="/partner-support"                                 element={<PartnerSupportPage />} />
+            <Route path="/cab-rate-card"                                   element={<CabRateCardPage />} />
             <Route path="/customer-care/cab-booking/:customerId"            element={<CabBookingPage />} />
             <Route path="/customer-care/hotel-booking/:customerId"          element={<HotelBookingPage />} />
             <Route path="/customer-care/tour-booking/:customerId"           element={<TourBookingPage />} />
@@ -170,6 +175,7 @@ export function AppRoutes() {
             {/* Customer account-deletion requests */}
             <Route path="/account-deletion"            element={<AccountDeletionPage />} />
             <Route path="/email/logs"                  element={<EmailLogsPage />} />
+            <Route path="/email/templates"             element={<EmailTemplatesPage />} />
             <Route path="/notices"                      element={<NoticesPage />} />
             <Route path="/onboarding-docs"             element={<OnboardingDocsPage />} />
 

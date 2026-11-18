@@ -108,16 +108,30 @@ const HERO_ICONS = [
   "Star", "MapPin", "Zap", "BadgePercent", "Wallet", "Plane",
 ] as const;
 
+/** HeroSection.tsx's TRUST_ICONS — the chips beside the headline. */
+const HERO_TRUST_ICONS = [
+  "BadgeCheck", "ReceiptText", "Headset", "ShieldCheck", "Sparkles", "Compass",
+  "Star", "MapPin", "Wallet", "Zap", "Plane", "Users",
+] as const;
+
 /** customer-web/src/components/renderers/ServicesSection.tsx:3-8 */
 const SERVICES_ICONS = ["Car", "Hotel", "Map", "MapPin"] as const;
 
+/** customer-web/src/components/renderers/RideTypesSection.tsx:20-24 — each
+ *  name carries its own colour on the site, so they are not interchangeable. */
+const RIDE_TYPE_ICONS = ["CarFront", "Plane", "MoveRight", "CircleUserRound", "RefreshCw"] as const;
+
 /** customer-web/src/components/renderers/WhyUsSection.tsx:13-20 */
-const WHY_US_ICONS = ["Zap", "ShieldCheck", "Tag", "Phone", "Lock", "Smartphone"] as const;
+const WHY_US_ICONS = [
+  "Zap", "ShieldCheck", "IndianRupee", "Lock", "Headphones",
+  // Kept for variants authored before the 2026-11 redesign.
+  "Tag", "Phone", "Smartphone",
+] as const;
 
 /** customer-web/src/components/renderers/HowItWorksSection.tsx:19-33 */
 const HOW_IT_WORKS_ICONS = [
   "Search", "CalendarCheck", "ShieldCheck", "Plane", "Car", "MapPin", "Wallet",
-  "Smartphone", "CreditCard", "Star", "Users", "Gift", "HandHeart",
+  "Smartphone", "CreditCard", "Star", "Users", "Gift", "HandHeart", "CheckCircle2",
 ] as const;
 
 /** ServicesSection.tsx:15 / WhyUsSection.tsx:26 — accepted `tone` values. */
@@ -128,8 +142,9 @@ const TONES_6 = ["primary", "success", "accent", "info", "warning", "danger"] as
 
 /** Mirrors SECTION_CONTENT_KEYS (services/__init__.py:932-951). */
 export const SECTION_ALLOWED_KEYS: Record<string, readonly string[]> = {
-  HERO: ["marquee_items"],
+  HERO: ["marquee_items", "trust_items"],
   SERVICES: ["items", "eyebrow", "title", "subtitle"],
+  RIDE_TYPES: ["items"],
   WHY_US: ["items", "eyebrow", "title", "subtitle"],
   STATS: ["stats", "eyebrow", "title"],
   HOW_IT_WORKS: ["steps"],
@@ -182,6 +197,19 @@ export const SECTION_CONTENT_SCHEMA: Record<string, BandSchema> = {
           { key: "sublabel", label: "Sub-label", kind: "text" },
         ],
       },
+      {
+        key: "trust_items",
+        itemLabel: "trust chip",
+        rowKind: "object",
+        max: 6,
+        keyField: "label",
+        fields: [
+          { key: "icon", label: "Icon", kind: "select", options: HERO_TRUST_ICONS,
+            help: "Sets the chip beside the headline. Blank uses a shield." },
+          { key: "label", label: "Label", kind: "text", required: true,
+            help: "Empty rows are dropped; with none at all the site shows its three defaults." },
+        ],
+      },
     ],
   },
 
@@ -214,6 +242,31 @@ export const SECTION_CONTENT_SCHEMA: Record<string, BandSchema> = {
     ],
   },
 
+  // The heading and sub-heading are the variant's own headline/subheadline
+  // slots, so only the cards live here.
+  RIDE_TYPES: {
+    arrays: [
+      {
+        key: "items",
+        itemLabel: "ride type",
+        rowKind: "object",
+        max: 6,
+        keyField: "title",
+        duplicateIsError: true,
+        emptyMeansHidden: true,
+        addLabel: "Add ride type",
+        fields: [
+          { key: "icon", label: "Icon", kind: "select", options: RIDE_TYPE_ICONS,
+            help: "This band draws only these five, each in its own colour. Blank uses the cab." },
+          { key: "title", label: "Title", kind: "text", required: true },
+          { key: "desc", label: "Description", kind: "textarea" },
+          { key: "href", label: "Link", kind: "text", placeholder: "/cabs",
+            help: "Blank sends the card to the cab search." },
+        ],
+      },
+    ],
+  },
+
   WHY_US: {
     arrays: [
       {
@@ -227,7 +280,7 @@ export const SECTION_CONTENT_SCHEMA: Record<string, BandSchema> = {
         addLabel: "Add reason",
         fields: [
           { key: "icon", label: "Icon", kind: "select", options: WHY_US_ICONS,
-            help: "This band draws only these six." },
+            help: "This band draws only these names. The icon takes its colour from the tone." },
           { key: "title", label: "Title", kind: "text", required: true },
           { key: "desc", label: "Description", kind: "textarea" },
           { key: "tone", label: "Tone", kind: "select", options: TONES_6 },
@@ -359,6 +412,8 @@ export const SECTION_CONTENT_SCHEMA: Record<string, BandSchema> = {
         fields: [
           { key: "question", label: "Question", kind: "text", required: true },
           { key: "answer", label: "Answer", kind: "textarea", required: true },
+          { key: "category", label: "Category", kind: "text",
+            help: "Tab this question files under (e.g. Cab Booking, Payments & Refunds). Blank goes under General. One category only means no tab rail is shown." },
         ],
       },
     ],

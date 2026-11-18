@@ -105,6 +105,8 @@ export interface VehicleCategory {
 
 export interface CabBookingMeta {
   vehicle_categories: VehicleCategory[];
+  /** Every cab product and whether Settings → Cab Booking allows it. */
+  trip_types: { code: string; enabled: boolean }[];
   pricing: Record<string, Record<string, {
     base_fare: number;
     per_km_rate: number;
@@ -128,10 +130,31 @@ export interface CabBookingQuotePayload {
   trip_type: string;
   pickup_location: string;
   drop_location: string;
+  /** Places visited between pickup and drop — measured as extra legs. */
+  stops?: { name: string }[];
   pickup_datetime: string; // ISO
   return_datetime?: string | null;
   waiting_minutes?: number | null;
   customer_id?: number | null;
+}
+
+/** The server's trip-type verdict: errors block the booking, hints guide it. */
+export interface CabTripCheck {
+  trip_type: string;
+  is_valid: boolean;
+  errors: string[];
+  warnings: string[];
+  hints: string[];
+  detected_type: string | null;
+  crosses_cities: boolean;
+  cities: string[];
+  distance_km: number | null;
+  duration: {
+    minutes: number | null;
+    arrival: string | null;
+    source: string;
+    avg_speed_kmh: number;
+  };
 }
 
 export interface CabQuoteCoupon {
@@ -165,18 +188,162 @@ export interface CabBookingQuote {
   coupons: CabQuoteCoupon[];
 }
 
+// ── Package pricing (rate card, migration 0097/0098) ──────────
+// Money is a Decimal on the wire and stays a string here, exactly as the per-km
+// quote does: the desk displays what the server computed, never its own sum.
+
+export interface RatePackage {
+  rate_id: number;
+  rental_type: string;
+  included_hours: number;
+  included_km: number;
+  price: DecimalValue;
+  extra_hour_rate: DecimalValue;
+  extra_km_rate: DecimalValue;
+  driver_allowance: DecimalValue;
+  midnight_return_charge: DecimalValue;
+  toll_included: boolean;
+  parking_included: boolean;
+  night_halt_included: boolean;
+  effective_from: string | null;
+  custom: (CustomQuote & { applies: boolean }) | null;
+}
+
+export interface RateClass {
+  vehicle_class: string;
+  label: string;
+  models: string | null;
+  seating_capacity: number | null;
+  vehicle_category_id: number | null;
+  rate_source: "CITY" | "PLATFORM";
+  packages: RatePackage[];
+}
+
+export interface RentalRateCard {
+  city_id: number | null;
+  effective_date: string;
+  rental_types: string[];
+  classes: RateClass[];
+}
+
+export interface CustomQuote {
+  id: number;
+  customer_id: number;
+  city_id: number | null;
+  vehicle_class: string;
+  rental_type: string;
+  included_hours: number;
+  package_price: DecimalValue | null;
+  extra_hour_rate: DecimalValue | null;
+  extra_km_rate: DecimalValue | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  reason: string | null;
+  is_active: boolean;
+  customer_name?: string;
+  mobile_number?: string;
+  city_name?: string | null;
+}
+
+export interface CustomQuotePayload {
+  customer_id: number;
+  city_id?: number | null;
+  vehicle_class: string;
+  rental_type: string;
+  included_hours: number;
+  package_price?: string | null;
+  extra_hour_rate?: string | null;
+  extra_km_rate?: string | null;
+  valid_from?: string | null;
+  valid_to?: string | null;
+  reason?: string | null;
+}
+
+export interface RateValidation {
+  code: string;
+  severity: "ERROR" | "WARNING" | "INFO";
+  message: string;
+  field: string | null;
+}
+
+export interface RentalQuoteSide {
+  package_price: DecimalValue;
+  extra_hours: DecimalValue;
+  extra_hour_rate: DecimalValue;
+  extra_hour_charge: DecimalValue;
+  extra_km: DecimalValue;
+  extra_km_rate: DecimalValue;
+  extra_km_charge: DecimalValue;
+  driver_allowance: DecimalValue;
+  midnight_charge: DecimalValue;
+  total: DecimalValue;
+  toll_included: boolean;
+  parking_included: boolean;
+  night_halt_included: boolean;
+}
+
+export interface RentalQuoteLine {
+  label: string;
+  standard: DecimalValue;
+  applied: DecimalValue;
+  changed: boolean;
+}
+
+export interface RentalQuote {
+  city_id: number;
+  vehicle_class: string;
+  vehicle_label: string | null;
+  vehicle_category_id: number | null;
+  seating_capacity: number | null;
+  rental_type: string;
+  rate_source: "CITY" | "PLATFORM";
+  hours: DecimalValue;
+  km: DecimalValue;
+  days: number;
+  returned_after_midnight: boolean;
+  package: { included_hours: number; included_km: number; days: number };
+  standard: RentalQuoteSide;
+  applied: RentalQuoteSide;
+  lines: RentalQuoteLine[];
+  difference: DecimalValue;
+  custom_quote: CustomQuote | null;
+  custom_applied: boolean;
+  can_book: boolean;
+  total: DecimalValue;
+  validations: RateValidation[];
+}
+
+export interface RentalQuotePayload {
+  city_id?: number | null;
+  customer_id?: number | null;
+  vehicle_class: string;
+  rental_type: string;
+  hours: number;
+  km: number;
+  days: number;
+  returned_after_midnight?: boolean;
+  pickup_datetime?: string | null;
+}
+
 export interface CabBookingCreatePayload {
   customer_id: number;
   city_id?: number | null;
   destination_city_id?: number | null;
+  pricing_mode?: "PER_KM" | "PACKAGE";
+  vehicle_class?: string;
+  hours?: number;
+  km?: number;
+  days?: number;
+  returned_after_midnight?: boolean;
   trip_type: string;
-  vehicle_category_id: number;
+  vehicle_category_id?: number | null;
   pickup_location: string;
   pickup_latitude?: number | null;
   pickup_longitude?: number | null;
   drop_location: string;
   drop_latitude?: number | null;
   drop_longitude?: number | null;
+  stops?: { name: string }[];
   pickup_datetime: string; // ISO
   return_datetime?: string | null;
   waiting_minutes?: number | null;
@@ -211,6 +378,7 @@ export interface CabBookingAmendPayload {
   drop_location: string;
   drop_latitude?: number | null;
   drop_longitude?: number | null;
+  stops?: { name: string }[];
   pickup_datetime: string; // ISO
   return_datetime?: string | null;
   waiting_minutes?: number | null;
@@ -432,13 +600,49 @@ export const customerCareService = {
   getCabMeta: (cityId?: number): Promise<CabBookingMeta> =>
     apiClient.get(`${BASE}/cab-booking/meta`, { params: cityId ? { city_id: cityId } : undefined }).then(r => r.data),
 
-  // Server-side fare quote — the only source of cab pricing the desk shows
+  // Server-side fare quote — the only source of cab pricing the desk shows.
+  // Refuses a trip whose type does not match the places (a Local ending in
+  // another city) instead of quoting the wrong sheet.
   quoteCabBooking: (payload: CabBookingQuotePayload): Promise<CabBookingQuote> =>
     apiClient.post(`${BASE}/cab-booking/quote`, payload).then(r => r.data),
+
+  // Live trip-type check — same guard the quote/create path enforces, so the
+  // desk sees the mismatch before it tries to price the trip.
+  checkCabTrip: (payload: {
+    trip_type: string;
+    pickup: { name: string; latitude?: number | null; longitude?: number | null };
+    drop?: { name: string; latitude?: number | null; longitude?: number | null } | null;
+    stops?: { name: string }[];
+    pickup_datetime?: string;
+    return_datetime?: string;
+  }): Promise<{ data: CabTripCheck }> =>
+    apiClient.post("/public/cab/trip-check", payload).then(r => r.data),
 
   // Create cab booking (price computed by the same server call as the quote)
   createCabBooking: (payload: CabBookingCreatePayload): Promise<CabBookingCreateResult> =>
     apiClient.post(`${BASE}/cab-booking`, payload).then(r => r.data),
+
+  // ── Rate card / package pricing ─────────────────────────────
+  // The card the desk quotes from. `customer_id` adds each package's agreed
+  // price for that customer, which is what makes the comparison possible.
+  getCabRateCard: (params?: { city_id?: number | null; customer_id?: number | null }): Promise<RentalRateCard> =>
+    apiClient.get(`${BASE}/cab-booking/rate-card`, { params }).then(r => r.data),
+
+  // Package quote: card price and the customer's agreed price side by side
+  quoteRentalBooking: (payload: RentalQuotePayload): Promise<RentalQuote> =>
+    apiClient.post(`${BASE}/cab-booking/rental-quote`, payload).then(r => r.data),
+
+  listCustomQuotes: (params?: { customer_id?: number; city_id?: number; include_inactive?: boolean }): Promise<{ quotes: CustomQuote[] }> =>
+    apiClient.get(`${BASE}/cab-booking/custom-quotes`, { params }).then(r => r.data),
+
+  createCustomQuote: (payload: CustomQuotePayload): Promise<{ success: boolean; message: string; data: { id: number } }> =>
+    apiClient.post(`${BASE}/cab-booking/custom-quotes`, payload).then(r => r.data),
+
+  updateCustomQuote: (quoteId: number, payload: Partial<Omit<CustomQuotePayload, "customer_id" | "vehicle_class" | "rental_type" | "included_hours">> & { is_active?: boolean }): Promise<{ success: boolean; message: string }> =>
+    apiClient.patch(`${BASE}/cab-booking/custom-quotes/${quoteId}`, payload).then(r => r.data),
+
+  updateRateCardLine: (rateId: number, payload: Record<string, unknown>): Promise<{ success: boolean; message: string }> =>
+    apiClient.patch(`${BASE}/cab-booking/rate-card/${rateId}`, payload).then(r => r.data),
 
   // Amend a booked trip — re-quoted server-side; offers may be re-fanned
   amendCabBooking: (cabBookingId: number, payload: CabBookingAmendPayload): Promise<CabBookingAmendResult> =>

@@ -165,6 +165,14 @@ export default function ProfilePage() {
                       : "—"
                   }
                 />
+                <Row
+                  label="Session ends"
+                  value={
+                    config?.session_expires_at
+                      ? new Date(config.session_expires_at).toLocaleString()
+                      : "—"
+                  }
+                />
               </Grid>
               <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 2 }}>
                 Everyone in the dashboard is signed out at the daily cut-off, so

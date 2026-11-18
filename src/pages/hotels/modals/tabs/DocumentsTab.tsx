@@ -16,7 +16,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
 import { hotelService, HotelDetail, HotelDocument, HOTEL_UPLOAD_FOLDERS } from "../../../../services/hotel.service";
-import { uploadMedia } from "../../../../services/settings.service";
+import MediaPicker from "../../../../components/media/MediaPicker";
 import { apiErrorMessage } from "../../../../utils/apiError";
 import { HOTEL_QUERY_KEYS } from "../../constants";
 import { isAdminOrOfficer } from "../../../../utils/currentUser";
@@ -81,6 +81,7 @@ function DocRow({
   const { enqueueSnackbar } = useSnackbar();
   const qc = useQueryClient();
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [remarks, setRemarks] = useState("");
 
@@ -89,15 +90,13 @@ function DocRow({
     onRefresh();
   };
 
-  const handleUpload = async (file: File) => {
+  /** Attach a document URL — either freshly uploaded or picked from the library. */
+  const handleAttach = async (secureUrl: string) => {
     setUploading(true);
     try {
-      const result = await uploadMedia(file, "document", {
-        folderOverride: HOTEL_UPLOAD_FOLDERS.documents,
-      });
       await hotelService.addDocument(hotelId, {
         document_type: docType,
-        file_url: result.secure_url,
+        file_url: secureUrl,
       });
       enqueueSnackbar("Document uploaded", { variant: "success" });
       invalidate();
@@ -195,22 +194,32 @@ function DocRow({
             </>
           )}
 
-          {/* Admin upload */}
+          {/* Admin attach — existing Cloudinary asset or a new upload */}
           {!isOfficer && (
             <Button
               size="small"
-              component="label"
               variant="outlined"
+              onClick={() => setPickerOpen(true)}
               startIcon={uploading ? <CircularProgress size={12} /> : <Upload />}
               disabled={uploading}
               sx={{ height: 28, fontSize: "0.72rem" }}
             >
               {document ? "Replace" : "Upload"}
-              <input type="file" hidden accept="application/pdf,image/*" onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0])} />
             </Button>
           )}
         </Stack>
       </Stack>
+
+      <MediaPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onSelect={(items) => { if (items[0]) void handleAttach(items[0].secure_url); }}
+        onUploaded={(result) => void handleAttach(result.secure_url)}
+        folder={HOTEL_UPLOAD_FOLDERS.documents}
+        uploadFolder={HOTEL_UPLOAD_FOLDERS.documents}
+        kind="document"
+        title={`Choose ${DOC_LABELS[docType] ?? docType}`}
+      />
 
       <Dialog open={rejectOpen} onClose={() => setRejectOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Reject Document</DialogTitle>

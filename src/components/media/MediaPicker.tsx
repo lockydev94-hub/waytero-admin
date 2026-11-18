@@ -30,11 +30,13 @@ import {
 } from "@mui/material";
 import {
   PhotoLibrary, CloudUpload, Search, Delete, Close, CheckCircle,
-  Folder, Link as LinkIcon, GridView, CheckCircleOutline,
+  Folder, Link as LinkIcon, GridView, CheckCircleOutline, Description,
 } from "@mui/icons-material";
 import { useSnackbar } from "notistack";
 
-import { mediaService, MediaLibraryItem } from "../../services/media.service";
+import {
+  mediaService, MediaLibraryItem, MediaResourceType,
+} from "../../services/media.service";
 import { uploadMedia, MediaUploadResult } from "../../services/settings.service";
 import { apiErrorMessage } from "../../utils/apiError";
 import { MEDIA_LIMITS, limitKindForAssetType, mediaHint, uploadProblem } from "../../utils/mediaLimits";
@@ -89,6 +91,12 @@ export interface MediaPickerProps {
   /** Tighter size cap than the kind default, for endpoints that enforce one. */
   maxBytes?: number;
   title?: string;
+  /**
+   * Cloudinary resource types the Gallery should browse. Defaults to images,
+   * and to ["image", "raw"] for document slots — a scanned paper is stored as
+   * an image while a PDF is stored as raw, and both belong in one gallery.
+   */
+  resourceTypes?: MediaResourceType[];
 }
 
 const ASSET_TYPE_FOR: Record<MediaPickerKind, PickerAssetType> = {
@@ -121,6 +129,11 @@ function shortLabel(folder: string): string {
 const RASTER_MIME = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
 const isRaster = (f: File) => RASTER_MIME.has(f.type);
 
+/** Formats a browser can render inline — everything else gets a file tile. */
+const THUMBNAIL_FORMATS = new Set(["png", "jpg", "jpeg", "webp", "gif", "svg", "avif"]);
+const hasThumbnail = (item: MediaLibraryItem) =>
+  THUMBNAIL_FORMATS.has((item.format || "").toLowerCase()) && !!item.width;
+
 function sizeLabel(bytes: number | null): string {
   if (!bytes) return "";
   if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -142,6 +155,7 @@ export default function MediaPicker({
   accept,
   maxBytes,
   title = "Choose media",
+  resourceTypes,
 }: MediaPickerProps) {
   const theme = useTheme();
   const { enqueueSnackbar } = useSnackbar();
@@ -156,7 +170,20 @@ export default function MediaPicker({
   // Some endpoints cap tighter than the kind default; caption and guard share
   // the effective cap so they can never disagree.
   const cap = maxBytes ?? limits.maxBytes;
+  // When a crop spec is attached the file is re-encoded before it is uploaded
+  // (a 1200×800 frame is a few hundred KB), so the byte cap that matters is
+  // the one on the EXPORT, not on the source. The source is still bounded — a
+  // 60 MB RAW should fail fast rather than after a long decode — but a 12 MB
+  // phone photo is a normal input for a slot that resizes to 1200×800.
+  const CROP_SOURCE_MAX = 40 * 1024 * 1024;
+  const sourceCap = (f: File) =>
+    crop && isRaster(f) ? Math.max(cap, CROP_SOURCE_MAX) : cap;
   const activeAccept = accept ?? limits.mimes.join(",");
+  // Document slots browse both types: Cloudinary files PDFs under raw and
+  // scanned paperwork under image, so image-only would hide half the library.
+  const activeResourceTypes: MediaResourceType[] =
+    resourceTypes ?? (limitKind === "document" ? ["image", "raw"] : ["image"]);
+  const isDocumentSlot = limitKind === "document";
 
   const [tab, setTab] = useState(0);
 
@@ -191,6 +218,7 @@ export default function MediaPicker({
         query: search || undefined,
         nextCursor: cursor || undefined,
         pageSize: 30,
+        resourceTypes: activeResourceTypes,
       });
       setItems((prev) => (cursor ? [...prev, ...res.items] : res.items));
       setNextCursor(res.next_cursor || "");
@@ -201,7 +229,7 @@ export default function MediaPicker({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, [filterFolder, search]);
+  }, [filterFolder, search, activeResourceTypes.join(",")]);
 
   // Reset when opened.
   useEffect(() => {
@@ -235,7 +263,7 @@ export default function MediaPicker({
   const handleDelete = async (item: MediaLibraryItem) => {
     setDeleting(item.public_id);
     try {
-      await mediaService.deleteMedia(item.public_id);
+      await mediaService.deleteMedia(item.public_id, item.resource_type ?? "image");
       setItems((prev) => prev.filter((i) => i.public_id !== item.public_id));
       setSelected((prev) => prev.filter((i) => i.public_id !== item.public_id));
       enqueueSnackbar("Image deleted", { variant: "success" });
@@ -288,7 +316,7 @@ export default function MediaPicker({
     if (!f) return;
     // Reject before the crop step — an admin should not spend a minute
     // framing a file that cannot be uploaded anyway.
-    const problem = uploadProblem(f, limitKind, cap);
+    const problem = uploadProblem(f, limitKind, sourceCap(f));
     if (problem) {
       enqueueSnackbar(problem, { variant: "error" });
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -333,7 +361,7 @@ export default function MediaPicker({
 
   const confirmSelection = () => {
     if (selected.length === 0) {
-      enqueueSnackbar("Select at least one image", { variant: "warning" });
+      enqueueSnackbar(`Select at least one ${isDocumentSlot ? "file" : "image"}`, { variant: "warning" });
       return;
     }
     onSelect(selected);
@@ -354,7 +382,7 @@ export default function MediaPicker({
             <Box sx={{ flex: 1 }}>
               <Typography fontWeight={700}>{title}</Typography>
               <Typography variant="caption" color="text.secondary">
-                Pick an existing image or upload a new one
+                Pick an existing {isDocumentSlot ? "file" : "image"} or upload a new one
               </Typography>
             </Box>
             <IconButton onClick={onClose} disabled={uploading} aria-label="Close">
@@ -428,20 +456,39 @@ export default function MediaPicker({
                               "&:hover .actions": { opacity: 1 },
                             }}
                           >
-                            <Box
-                              component="img"
-                              src={thumbUrl(item)}
-                              alt={item.public_id}
-                              loading="lazy"
-                              sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                              onError={(e: any) => { e.target.style.display = "none"; }}
-                            />
+                            {hasThumbnail(item) ? (
+                              <Box
+                                component="img"
+                                src={thumbUrl(item)}
+                                alt={item.public_id}
+                                loading="lazy"
+                                sx={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                onError={(e: any) => { e.target.style.display = "none"; }}
+                              />
+                            ) : (
+                              // PDFs and other non-renderable assets still need
+                              // to be selectable, so they get a file tile instead
+                              // of a broken image.
+                              <Box sx={{
+                                width: "100%", height: "100%",
+                                display: "flex", flexDirection: "column",
+                                alignItems: "center", justifyContent: "center",
+                                gap: 0.5, p: 1,
+                              }}>
+                                <Description sx={{ fontSize: 40, color: "error.main" }} />
+                                <Typography variant="caption" sx={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>
+                                  {item.format || "file"}
+                                </Typography>
+                              </Box>
+                            )}
                             <Stack direction="row" spacing={0.5} sx={{ position: "absolute", bottom: 0, left: 0, right: 0, px: 0.75, py: 0.5, background: "linear-gradient(transparent, rgba(0,0,0,0.55))" }}>
                               <Typography variant="caption" color="common.white" noWrap sx={{ flex: 1, fontSize: 10 }}>
                                 {item.public_id.split("/").pop()}
                               </Typography>
                               <Typography variant="caption" color="rgba(255,255,255,0.7)" sx={{ fontSize: 10, flexShrink: 0 }}>
-                                {item.width && item.height ? `${item.width}×${item.height}` : sizeLabel(item.bytes)}
+                                {hasThumbnail(item) && item.width && item.height
+                                  ? `${item.width}×${item.height}`
+                                  : sizeLabel(item.bytes)}
                               </Typography>
                             </Stack>
 
@@ -494,7 +541,7 @@ export default function MediaPicker({
                 <Box sx={{ flex: 1, display: "grid", placeItems: "center", color: "text.disabled", p: 4, textAlign: "center" }}>
                   <Stack spacing={1} alignItems="center">
                     <Folder sx={{ fontSize: 44 }} />
-                    <Typography>No images found</Typography>
+                    <Typography>No {isDocumentSlot ? "files" : "images"} found</Typography>
                     <Typography variant="caption">Switch to the Upload tab to add one, or clear the folder filter.</Typography>
                   </Stack>
                 </Box>
@@ -548,13 +595,15 @@ export default function MediaPicker({
                     <CloudUpload sx={{ fontSize: 52, color: dragOver ? "primary.main" : "text.disabled", mb: 1 }} />
                     <Typography fontWeight={700}>Click to browse or drag & drop</Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {mediaHint(limitKind, cap)}
+                      {mediaHint(limitKind, crop ? Math.max(cap, CROP_SOURCE_MAX) : cap)}
                     </Typography>
                   </Box>
 
                   {crop && (
                     <Alert severity="info" sx={{ mt: 2 }} icon={<CheckCircleOutline />}>
-                      Images will open a crop/resize step before upload. You can choose the aspect ratio and output size.
+                      {crop.outputWidth && crop.outputHeight
+                        ? `Large files are fine — every image opens a crop step and is saved at ${crop.outputWidth}×${crop.outputHeight} before upload.`
+                        : "Images will open a crop/resize step before upload. You can choose the aspect ratio and output size."}
                     </Alert>
                   )}
 
@@ -627,7 +676,9 @@ export default function MediaPicker({
               disabled={selected.length === 0 || uploading}
               startIcon={selected.length > 0 ? <CheckCircleOutline /> : undefined}
             >
-              {multiple ? `Use ${selected.length} selected` : "Use this image"}
+              {multiple
+                ? `Use ${selected.length} selected`
+                : `Use this ${isDocumentSlot ? "file" : "image"}`}
             </Button>
           </Stack>
         </DialogActions>

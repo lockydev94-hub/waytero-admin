@@ -258,12 +258,15 @@ export function GalleryListEditor({
               strict
             />
           ) : (
-            <TextField
-              size="small"
-              label="Image URL"
-              value={item.image_url ?? ""}
-              onChange={(e) => patch({ image_url: e.target.value })}
-              fullWidth
+            // No slot geometry to enforce, so no crop step — but the image
+            // still comes from the Cloudinary picker, never a pasted URL.
+            <MediaUploader
+              value={item.image_url ?? null}
+              onChange={(url) => patch({ image_url: url ?? "" })}
+              folder="waytero/landing"
+              kind="image"
+              label="Choose gallery image"
+              previewHeight={150}
             />
           )}
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
