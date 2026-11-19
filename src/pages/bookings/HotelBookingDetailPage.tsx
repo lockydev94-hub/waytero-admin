@@ -21,7 +21,7 @@ import {
   Refresh, AccountBalance, TaskAlt, Login, Logout,
   PersonOff, AddCircle, Block, ConfirmationNumber, People,
   RestaurantMenu, ReceiptLong, Download, Savings, EditCalendar,
-  SwapHoriz,
+  SwapHoriz, WhatsApp,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
@@ -43,6 +43,7 @@ import EditHotelBookingModal from "./modals/EditHotelBookingModal";
 import SwitchHotelModal from "./modals/SwitchHotelModal";
 import SplitStayModal from "./modals/SplitStayModal";
 import OfferBadge from "../../components/common/OfferBadge";
+import WhatsAppSendModal, { WhatsAppDocumentRequest } from "../../components/common/WhatsAppSendModal";
 
 // ── Status config ─────────────────────────────────────────────
 const HOTEL_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; step: number }> = {
@@ -111,6 +112,7 @@ export default function HotelBookingDetailPage() {
     | "settle" | "generate-invoice" | "edit"
     | "switch-hotel" | "split-stay" | null;
   const [modal, setModal] = useState<ModalType>(null);
+  const [sendDoc, setSendDoc] = useState<WhatsAppDocumentRequest | null>(null);
 
   const bId = Number(bookingId);
   const hId = Number(hotelId);
@@ -225,6 +227,8 @@ export default function HotelBookingDetailPage() {
   const canInvoiceStage = ["CHECKED_OUT", "COMPLETED"].includes(hb.booking_status);
   const canGenerateInvoice = canInvoiceStage && !hasInvoice;
   const canCollectPayment = canInvoiceStage && hasInvoice && payStatus !== "PAID";
+  const latestHotelPayment = [...(hb.advance_payments ?? [])]
+    .sort((a, b) => new Date(b.collected_at ?? 0).getTime() - new Date(a.collected_at ?? 0).getTime())[0] ?? null;
 
   // ── Room-charge breakdown ─────────────────────────────────────
   // base_amount lumps the room tariff together with any extra-person / extra-bed
@@ -476,6 +480,64 @@ export default function HotelBookingDetailPage() {
                   )}
                 </Stack>
               )}
+            </SectionCard>
+
+            {/* Customer documents — available at every lifecycle stage, so the
+                desk can re-send a voucher or receipt to the guest on request. */}
+            <SectionCard title="Customer documents" icon={<WhatsApp sx={{ color: "success.main" }} />}>
+              <Stack direction="row" flexWrap="wrap" gap={1.5}>
+                <Button
+                  variant="contained"
+                  size="small"
+                  startIcon={<WhatsApp />}
+                  onClick={() => setSendDoc({
+                    documentLabel: "Booking confirmation",
+                    serviceLabel: "Hotel stay",
+                    bookingNumber: hb.booking_number,
+                    filename: `Booking_${hb.booking_number}.pdf`,
+                    loadPdf: () => bookingService.hotelBookingPdf(bId, hId),
+                  })}
+                >
+                  Send Booking PDF
+                </Button>
+                {hasInvoice && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<WhatsApp />}
+                    onClick={() => setSendDoc({
+                      documentLabel: "Invoice",
+                      serviceLabel: "Hotel stay",
+                      bookingNumber: hb.booking_number,
+                      filename: `Invoice_${hb.invoice_number}.pdf`,
+                      loadPdf: () => bookingService.hotelInvoicePdf(bId, hId),
+                    })}
+                  >
+                    Send Invoice
+                  </Button>
+                )}
+                {latestHotelPayment && (
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<WhatsApp />}
+                    onClick={() => setSendDoc({
+                      documentLabel: "Payment receipt",
+                      serviceLabel: "Hotel stay",
+                      bookingNumber: hb.booking_number,
+                      filename: `Payment_${latestHotelPayment.receipt_number}.pdf`,
+                      loadPdf: () => bookingService.hotelPaymentReceiptPdf(bId, hId),
+                    })}
+                  >
+                    Send Payment Receipt
+                  </Button>
+                )}
+                {!hasInvoice && !latestHotelPayment && (
+                  <Typography variant="body2" color="text.secondary">
+                    Invoice and payment receipts appear here once the stay is billed.
+                  </Typography>
+                )}
+              </Stack>
             </SectionCard>
 
             {/* Stay Record */}
@@ -746,6 +808,14 @@ export default function HotelBookingDetailPage() {
         open={modal === "split-stay"} onClose={() => setModal(null)}
         bookingId={bId} hotelId={hId} hb={hb}
         onDone={() => refetch()}
+      />
+
+      <WhatsAppSendModal
+        open={!!sendDoc}
+        onClose={() => setSendDoc(null)}
+        customerName={booking.customer_name}
+        customerMobile={booking.customer_mobile}
+        request={sendDoc}
       />
     </Box>
   );

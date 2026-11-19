@@ -21,7 +21,7 @@ import {
   LocationOn, AccessTime, SwapHoriz, Person,
   LocalTaxi, Payment, EventNote,
   Refresh, OpenInNew, AccountBalanceWallet, Block, DownloadOutlined,
-  AccountBalance, TaskAlt, HourglassTop, Info,
+  AccountBalance, TaskAlt, HourglassTop, Info, WhatsApp,
 } from "@mui/icons-material";
 import { useCountdown } from "../../hooks/useCountdown";
 import { useRealtime } from "../../hooks/useRealtime";
@@ -38,6 +38,7 @@ import CollectAdvanceModal from "./modals/CollectAdvanceModal";
 import VoidAdvanceModal from "./modals/VoidAdvanceModal";
 import { advanceService, AdvanceEligibility } from "../../services/advance.service";
 import OfferBadge from "../../components/common/OfferBadge";
+import WhatsAppSendModal, { WhatsAppDocumentRequest } from "../../components/common/WhatsAppSendModal";
 
 // ── Cab Status Config ─────────────────────────────────────────
 const CAB_STATUS_CONFIG: Record<string, { label: string; color: string; bgColor: string; step: number }> = {
@@ -122,6 +123,7 @@ export default function CabBookingDetailPage() {
   const qc = useQueryClient();
 
   const [modal, setModal] = useState<"assign-partner" | "assign-driver" | "reschedule" | "cancel" | "edit-cab" | "collect-advance" | "void-advance" | null>(null);
+  const [sendDoc, setSendDoc] = useState<WhatsAppDocumentRequest | null>(null);
 
   const bId = Number(bookingId);
   const cId = Number(cabId);
@@ -655,22 +657,70 @@ export default function CabBookingDetailPage() {
                     <InfoRow label="Pay Status" value={<Chip label={booking.payment_status} size="small" color={booking.payment_status === "PAID" ? "success" : "warning"} />} icon={<Payment sx={{ fontSize: 14 }} />} />
                   </TableBody>
                 </Table>
-                {cab.invoice_number && (
-                  <Box sx={{ pt: 1 }}>
+                <Box sx={{ pt: 1 }}>
+                  <Stack direction="row" gap={1} flexWrap="wrap">
                     <Button
-                      variant="outlined"
+                      variant="contained"
                       size="small"
-                      startIcon={<DownloadOutlined />}
-                      onClick={() => bookingService.cabDownloadInvoice(
-                        booking.id,
-                        cab.id,
-                        cab.invoice_number!,
-                      )}
+                      startIcon={<WhatsApp />}
+                      onClick={() => setSendDoc({
+                        documentLabel: "Booking confirmation",
+                        serviceLabel: "Cab booking",
+                        bookingNumber: cab.booking_number,
+                        filename: `Booking_${cab.booking_number}.pdf`,
+                        loadPdf: () => bookingService.cabBookingPdf(booking.id, cab.id),
+                      })}
                     >
-                      Download Invoice (PDF)
+                      Send Booking PDF
                     </Button>
-                  </Box>
-                )}
+                    {cab.invoice_number && (
+                      <>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<WhatsApp />}
+                          onClick={() => setSendDoc({
+                            documentLabel: "Invoice",
+                            serviceLabel: "Cab booking",
+                            bookingNumber: cab.booking_number,
+                            filename: `Invoice_${cab.invoice_number}.pdf`,
+                            loadPdf: () => bookingService.cabInvoicePdf(booking.id, cab.id),
+                          })}
+                        >
+                          Send Invoice
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          startIcon={<DownloadOutlined />}
+                          onClick={() => bookingService.cabDownloadInvoice(
+                            booking.id,
+                            cab.id,
+                            cab.invoice_number!,
+                          )}
+                        >
+                          Download Invoice
+                        </Button>
+                      </>
+                    )}
+                    {hasActiveAdvance && advElig?.advance && (
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        startIcon={<WhatsApp />}
+                        onClick={() => setSendDoc({
+                          documentLabel: "Payment receipt",
+                          serviceLabel: "Cab booking",
+                          bookingNumber: cab.booking_number,
+                          filename: `Payment_${advElig?.advance?.receipt_number}.pdf`,
+                          loadPdf: () => advanceService.downloadReceipt(cab.booking_number),
+                        })}
+                      >
+                        Send Payment Receipt
+                      </Button>
+                    )}
+                  </Stack>
+                </Box>
               </Stack>
             </SectionCard>
 
@@ -769,6 +819,14 @@ export default function CabBookingDetailPage() {
         bookingId={bId}
         bookingNumber={booking.booking_number}
         totalAmount={booking.total_amount}
+      />
+
+      <WhatsAppSendModal
+        open={!!sendDoc}
+        onClose={() => setSendDoc(null)}
+        customerName={booking.customer_name}
+        customerMobile={booking.customer_mobile}
+        request={sendDoc}
       />
     </Box>
   );

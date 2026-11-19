@@ -561,17 +561,41 @@ export const bookingService = {
       amount, payment_mode, collected_by, reference_number,
     }).then(r => r.data),
 
+  // ── Customer PDFs (blob-returning so the WhatsApp modal can attach them) ──
+  // The download* helpers below stay for the existing Download buttons; the
+  // *Pdf helpers are what the send modal uses to get the actual file bytes.
+  hotelInvoicePdf: async (bookingId: number, hotelId: number): Promise<Blob> => {
+    const response = await apiClient.get(
+      `${base}/${bookingId}/hotel/${hotelId}/download-invoice`,
+      { responseType: "blob" },
+    );
+    return new Blob([response.data], { type: "application/pdf" });
+  },
+
+  hotelBookingPdf: async (bookingId: number, hotelId: number): Promise<Blob> => {
+    const response = await apiClient.get(
+      `${base}/${bookingId}/hotel/${hotelId}/booking-pdf`,
+      { responseType: "blob" },
+    );
+    return new Blob([response.data], { type: "application/pdf" });
+  },
+
+  hotelPaymentReceiptPdf: async (bookingId: number, hotelId: number): Promise<Blob> => {
+    const response = await apiClient.get(
+      `${base}/${bookingId}/hotel/${hotelId}/payment-receipt`,
+      { responseType: "blob" },
+    );
+    return new Blob([response.data], { type: "application/pdf" });
+  },
+
   // Download the frozen hotel invoice PDF — triggers a browser file download.
   // Only available once the stay is checked-out/completed/settled and an
   // invoice number exists. Mirrors the cab download flow.
   hotelDownloadInvoice: async (
     bookingId: number, hotelId: number, invoice_number: string,
   ): Promise<void> => {
-    const response = await apiClient.get(
-      `${base}/${bookingId}/hotel/${hotelId}/download-invoice`,
-      { responseType: "blob" },
-    );
-    const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+    const blob = await bookingService.hotelInvoicePdf(bookingId, hotelId);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${invoice_number}.pdf`;
@@ -581,6 +605,22 @@ export const bookingService = {
     URL.revokeObjectURL(url);
   },
 
+  cabInvoicePdf: async (bookingId: number, cabId: number): Promise<Blob> => {
+    const response = await apiClient.get(
+      `${base}/${bookingId}/cab/${cabId}/download-invoice`,
+      { responseType: "blob" },
+    );
+    return new Blob([response.data], { type: "application/pdf" });
+  },
+
+  cabBookingPdf: async (bookingId: number, cabId: number): Promise<Blob> => {
+    const response = await apiClient.get(
+      `${base}/${bookingId}/cab/${cabId}/booking-pdf`,
+      { responseType: "blob" },
+    );
+    return new Blob([response.data], { type: "application/pdf" });
+  },
+
   // Download the cab booking invoice PDF — admin-gated, mirrors the partner
   // download but without partner ownership scope. Backend route:
   // GET /admin/bookings/{bookingId}/cab/{cabId}/download-invoice
@@ -588,11 +628,8 @@ export const bookingService = {
   cabDownloadInvoice: async (
     bookingId: number, cabId: number, invoice_number: string,
   ): Promise<void> => {
-    const response = await apiClient.get(
-      `${base}/${bookingId}/cab/${cabId}/download-invoice`,
-      { responseType: "blob" },
-    );
-    const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+    const blob = await bookingService.cabInvoicePdf(bookingId, cabId);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `Invoice_${invoice_number}.pdf`;

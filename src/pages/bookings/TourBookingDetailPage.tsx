@@ -19,7 +19,7 @@ import {
   People, CheckCircle, Cancel, Refresh, TaskAlt, PlayArrow, AccountBalance, OpenInNew,
   Edit, Description, ReceiptLong, Info, Notes, AccessTime, Badge, Email, Phone,
   HourglassEmpty, PendingActions, Celebration, Send, HistoryEdu,
-  EditCalendar, Payments, DirectionsCar, AddCircle,
+  EditCalendar, Payments, DirectionsCar, AddCircle, WhatsApp,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
@@ -31,6 +31,7 @@ import {
   TourAdvanceModal, TourFleetModal, TourEditTripModal, TourChargeModal,
 } from "./modals/TourManageModals";
 import OfferBadge from "../../components/common/OfferBadge";
+import WhatsAppSendModal, { WhatsAppDocumentRequest } from "../../components/common/WhatsAppSendModal";
 
 // ── Status config ─────────────────────────────────────────────
 const STATUS_META: Record<string, { label: string; color: string; bg: string; step: number }> = {
@@ -80,6 +81,7 @@ export default function TourBookingDetailPage() {
 
   type ModalType = "confirm" | "cancel" | "advance" | "fleet" | "edit" | "charge" | null;
   const [modal, setModal] = useState<ModalType>(null);
+  const [sendDoc, setSendDoc] = useState<WhatsAppDocumentRequest | null>(null);
 
   const bId = Number(bookingId);
   const tId = Number(tourId);
@@ -141,6 +143,7 @@ export default function TourBookingDetailPage() {
   const balanceDue = Math.max((manage?.total_amount ?? booking.total_amount) - (manage?.advance_total ?? 0), 0);
   const isPaid = paymentStatus === "PAID";
   const canCollect = !["SETTLED", "CANCELLED"].includes(status);
+  const latestTourPayment = manage?.advances?.find((a) => a.status === "ACTIVE") ?? null;
 
   // Action guards — lifecycle actions are gated by status AND prerequisites.
   const canConfirm = status === "PENDING_CONFIRMATION";
@@ -513,6 +516,16 @@ export default function TourBookingDetailPage() {
           <Box sx={{ mt: 3 }}>
             <SectionCard title="Documents" icon={<ReceiptLong color="primary" />}>
               <Stack spacing={1}>
+                <Button fullWidth variant="contained" startIcon={<WhatsApp />}
+                  onClick={() => setSendDoc({
+                    documentLabel: "Tour booking & itinerary",
+                    serviceLabel: "Tour package",
+                    bookingNumber: booking.booking_number,
+                    filename: `tour-${booking.booking_number}.pdf`,
+                    loadPdf: () => tourService.itineraryPdf(tId),
+                  })}>
+                  Send booking & itinerary
+                </Button>
                 <Button fullWidth variant="outlined" startIcon={<HistoryEdu />}
                   onClick={() => tourService.downloadItinerary(tId)
                     .then(() => enqueueSnackbar("Itinerary downloaded", { variant: "success" }))
@@ -527,12 +540,34 @@ export default function TourBookingDetailPage() {
                 ) : (
                   <Typography variant="body2" color="text.secondary">No invoice generated yet. Generate it before settlement.</Typography>
                 )}
+                <Button fullWidth variant="outlined" startIcon={<WhatsApp />}
+                  onClick={() => setSendDoc({
+                    documentLabel: "Invoice",
+                    serviceLabel: "Tour package",
+                    bookingNumber: booking.booking_number,
+                    filename: `tour-invoice-${manage?.invoice_number ?? booking.booking_number}.pdf`,
+                    loadPdf: () => tourService.invoicePdf(tId),
+                  })}>
+                  Send invoice
+                </Button>
                 <Button fullWidth variant="outlined" startIcon={<Description />}
                   onClick={() => tourService.downloadInvoice(tId)
                     .then(() => { enqueueSnackbar("Invoice downloaded", { variant: "success" }); refetchManage(); })
                     .catch(() => enqueueSnackbar("Could not download invoice", { variant: "error" }))}>
                   {manage?.invoice_number ? "Download invoice" : "Generate & download invoice"}
                 </Button>
+                {latestTourPayment && (
+                  <Button fullWidth variant="outlined" startIcon={<WhatsApp />}
+                    onClick={() => setSendDoc({
+                      documentLabel: "Payment receipt",
+                      serviceLabel: "Tour package",
+                      bookingNumber: booking.booking_number,
+                      filename: `tour-${latestTourPayment.receipt_number}.pdf`,
+                      loadPdf: () => tourService.advanceReceiptPdf(tId, latestTourPayment.id),
+                    })}>
+                    Send payment receipt
+                  </Button>
+                )}
               </Stack>
             </SectionCard>
           </Box>
@@ -589,6 +624,14 @@ export default function TourBookingDetailPage() {
       <TourChargeModal
         open={modal === "charge"} onClose={() => setModal(null)} submitting={manageSubmitting}
         onSubmit={(p) => runManage(() => tourService.addCharge(tId, p), "Additional charge added")}
+      />
+
+      <WhatsAppSendModal
+        open={!!sendDoc}
+        onClose={() => setSendDoc(null)}
+        customerName={booking.customer_name}
+        customerMobile={booking.customer_mobile}
+        request={sendDoc}
       />
 
     </Box>
