@@ -53,6 +53,11 @@ export interface TourPackage {
   exclusions: Array<{ id?: number; text: string }>;
   pricing: TourPricing[];
   media: TourMedia[];
+  is_custom?: boolean;
+  custom_customer_id?: number | null;
+  custom_plan?: CustomTourPlanSnapshot | null;
+  estimated_cost?: number;
+  quoted_price?: number | null;
   created_at?: string;
   submitted_at?: string | null;
   approved_at?: string | null;
@@ -160,6 +165,138 @@ export interface TourManagePayload {
   };
 }
 
+// ── Custom / private tour plan (migration 0109) ─────────────────────────────
+
+export interface CustomTourPlace {
+  name: string;
+  arrival_time?: string | null;
+  distance_from_previous_km: number;
+  distance_source?: string | null;
+  notes?: string | null;
+}
+
+export interface CustomTourHotel {
+  enabled: boolean;
+  hotel_name?: string | null;
+  address?: string | null;
+  category?: string | null;
+  room_type?: string | null;
+  rooms: number;
+  nights: number;
+  cost: number;
+  notes?: string | null;
+}
+
+export interface CustomTourDay {
+  day_number: number;
+  title: string;
+  description?: string | null;
+  places: CustomTourPlace[];
+  hotel?: CustomTourHotel | null;
+  other_cost: number;
+  notes?: string | null;
+}
+
+export interface CustomTourPlanSnapshot {
+  version: number;
+  days: CustomTourDay[];
+  total_distance_km: number;
+  cab: Record<string, unknown>;
+  toll_cost: number;
+  other_cost: number;
+  cost_breakdown: CustomTourCostBreakdown;
+}
+
+export interface CustomTourCostBreakdown {
+  total_distance_km: number;
+  billed_distance_km: number;
+  cab_base_fare: number;
+  cab_distance_charge: number;
+  cab_driver_allowance: number;
+  cab_night_charge: number;
+  cab_toll: number;
+  toll_cost: number;
+  hotel_total: number;
+  other_total: number;
+  cab_total: number;
+  estimated_cost: number;
+}
+
+export interface CustomTourCabOption {
+  id: number;
+  category_name: string;
+  seating_capacity?: number | null;
+  luggage_capacity?: number | null;
+  trip_type: string;
+  source: string;
+  base_fare: number;
+  minimum_km: number;
+  per_km_rate: number;
+  driver_allowance: number;
+  driver_allowance_type: string;
+  night_charge: number;
+  night_charge_type: string;
+  toll: number;
+}
+
+export interface CustomTourPartner {
+  id: number;
+  business_name?: string | null;
+  owner_name?: string | null;
+  mobile?: string | null;
+  city_id?: number | null;
+  city_name?: string | null;
+  has_tour_service: boolean;
+}
+
+export interface CustomTourEstimatePayload {
+  city_id: number;
+  travel_start_date: string;
+  duration_days: number;
+  cab_category_id: number;
+  days: CustomTourDay[];
+  toll_cost: number;
+  other_cost: number;
+}
+
+export interface CustomTourPlanPayload extends CustomTourEstimatePayload {
+  customer_id: number;
+  partner_id: number;
+  package_name: string;
+  destination: string;
+  duration_nights: number;
+  persons_count: number;
+  minimum_persons: number;
+  maximum_persons?: number | null;
+  pickup_location?: string | null;
+  short_description?: string | null;
+  description?: string | null;
+  inclusions: string[];
+  exclusions: string[];
+  media: string[];
+  quoted_price?: number | null;
+  book_now: boolean;
+  special_requests?: string | null;
+  participants?: Array<Record<string, unknown>>;
+}
+
+export interface CustomTourBookingResult {
+  tour_booking_id: number;
+  master_booking_id: number;
+  booking_number: string;
+  master_booking_number: string;
+  total_amount: number;
+  platform_commission: number;
+  partner_payout: number;
+  booking_status: string;
+}
+
+export interface CustomTourPlanResult {
+  package: TourPackage;
+  estimate: CustomTourCostBreakdown;
+  booking: CustomTourBookingResult | null;
+}
+
 export interface TourStats {
   active: number;
   pending_review: number;
@@ -220,10 +357,23 @@ export const tourService = {
     apiClient.post(`/admin/tours/bookings/${id}/charges`, payload).then(r => r.data),
   settleBooking: (id: number) =>
     apiClient.post(`/admin/tours/bookings/${id}/settle`).then(r => r.data),
+  // ── Customer PDFs (blob-returning so the WhatsApp modal can attach them) ──
+  advanceReceiptPdf: async (id: number, advanceId: number): Promise<Blob> => {
+    const res = await apiClient.get(`/admin/tours/bookings/${id}/advance/${advanceId}/receipt`, { responseType: "blob" });
+    return new Blob([res.data], { type: "application/pdf" });
+  },
+  invoicePdf: async (id: number): Promise<Blob> => {
+    const res = await apiClient.get(`/admin/tours/bookings/${id}/invoice`, { responseType: "blob" });
+    return new Blob([res.data], { type: "application/pdf" });
+  },
+  itineraryPdf: async (id: number): Promise<Blob> => {
+    const res = await apiClient.get(`/admin/tours/bookings/${id}/itinerary`, { responseType: "blob" });
+    return new Blob([res.data], { type: "application/pdf" });
+  },
   /** Stream the advance receipt PDF (browser download). */
   downloadAdvanceReceipt: async (id: number, advanceId: number, receiptNumber: string) => {
-    const res = await apiClient.get(`/admin/tours/bookings/${id}/advance/${advanceId}/receipt`, { responseType: "blob" });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const blob = await tourService.advanceReceiptPdf(id, advanceId);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `${receiptNumber}.pdf`;
@@ -233,8 +383,8 @@ export const tourService = {
   },
   /** Generate + stream the booking invoice PDF (browser download). */
   downloadInvoice: async (id: number) => {
-    const res = await apiClient.get(`/admin/tours/bookings/${id}/invoice`, { responseType: "blob" });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const blob = await tourService.invoicePdf(id);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `tour-invoice-${id}.pdf`;
@@ -244,8 +394,8 @@ export const tourService = {
   },
   /** Stream the tour itinerary PDF (customer + booking + day-by-day plan + payment + fleet). */
   downloadItinerary: async (id: number) => {
-    const res = await apiClient.get(`/admin/tours/bookings/${id}/itinerary`, { responseType: "blob" });
-    const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
+    const blob = await tourService.itineraryPdf(id);
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = `tour-itinerary-${id}.pdf`;
@@ -260,6 +410,35 @@ export const tourService = {
     apiClient.get<any>("/admin/partners", { params: { page_size: 200 } }).then(r => (r.data as any)?.items ?? r.data),
   getCities: () =>
     apiClient.get<any[]>("/admin/settings/master/cities", { params: { active_only: true } }).then(r => r.data),
+
+  // Custom / private tour plans ─────────────────────────────────
+  customPartners: (cityId?: number): Promise<CustomTourPartner[]> =>
+    apiClient.get<CustomTourPartner[]>("/admin/tours/custom-plans/partners", {
+      params: cityId ? { city_id: cityId } : undefined,
+    }).then(r => r.data),
+  customCabOptions: (cityId: number, travelDate?: string): Promise<CustomTourCabOption[]> =>
+    apiClient.get<CustomTourCabOption[]>("/admin/tours/custom-plans/cab-options", {
+      params: { city_id: cityId, ...(travelDate ? { travel_date: travelDate } : {}) },
+    }).then(r => r.data),
+  customRouteDistance: (payload: {
+    origin: string; destination: string;
+    origin_hint?: string; destination_hint?: string;
+  }): Promise<{ distance_km: number; source: string }> =>
+    apiClient.post<{ distance_km: number; source: string }>(
+      "/admin/tours/custom-plans/route-distance", payload,
+    ).then(r => r.data),
+  estimateCustomPlan: (payload: CustomTourEstimatePayload): Promise<{
+    plan: CustomTourPlanSnapshot; breakdown: CustomTourCostBreakdown; cab: Record<string, unknown>;
+  }> =>
+    apiClient.post("/admin/tours/custom-plans/estimate", payload).then(r => r.data),
+  createCustomPlan: (payload: CustomTourPlanPayload): Promise<CustomTourPlanResult> =>
+    apiClient.post<CustomTourPlanResult>("/admin/tours/custom-plans", payload).then(r => r.data),
+  bookCustomPlan: (packageId: number, payload: {
+    partner_id: number; quoted_price: number; travel_start_date: string;
+    persons_count: number; special_requests?: string | null;
+    participants?: Array<Record<string, unknown>>;
+  }): Promise<{ package: TourPackage; booking: CustomTourBookingResult }> =>
+    apiClient.post(`/admin/tours/custom-plans/${packageId}/book`, payload).then(r => r.data),
 
   // Customer care quick-booking ─────────────────────────────────
   getCustomerCareMeta: (customerId: number) =>

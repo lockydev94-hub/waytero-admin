@@ -16,7 +16,7 @@ import {
   CheckCircle, Block, PauseCircle, Cancel, Star, StarBorder, Image as ImageIcon,
   OpenInNew, ReceiptLong, Hotel, Restaurant, CameraAlt, DirectionsBus, Flight,
   Museum, BeachAccess, Hiking, HistoryEdu, Park, LocalActivity, Verified, Schedule,
-  AttachMoney, Description, ListAlt, PendingActions, Drafts, TaskAlt, CancelOutlined,
+  AttachMoney, Description, ListAlt, PendingActions, Drafts,  TaskAlt, CancelOutlined, Lock,
 } from "@mui/icons-material";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSnackbar } from "notistack";
@@ -31,6 +31,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
   INACTIVE:         { label: "Inactive",         color: "#6B7280", bg: "#F3F4F6", icon: <PauseCircle sx={{ fontSize: 14 }} /> },
   SUSPENDED:        { label: "Suspended",        color: "#F59E0B", bg: "#FEF3C7", icon: <Block sx={{ fontSize: 14 }} /> },
   REJECTED:         { label: "Rejected",         color: "#EF4444", bg: "#FEE2E2", icon: <CancelOutlined sx={{ fontSize: 14 }} /> },
+  CUSTOM:           { label: "Custom / Private", color: "#0284C7", bg: "#E0F2FE", icon: <Lock sx={{ fontSize: 14 }} /> },
 };
 
 function InfoRow({ label, value, icon }: { label: string; value: React.ReactNode; icon?: React.ReactNode }) {
@@ -93,7 +94,7 @@ export default function TourDetailPage() {
   if (isError || !pkg) return <Alert severity="error" sx={{ m: 3 }} action={<Button onClick={() => refetch()}>Retry</Button>}>Package not found.</Alert>;
 
   const status = STATUS_META[pkg.status] ?? STATUS_META.DRAFT;
-  const startingPrice = pkg.pricing?.length ? Math.min(...pkg.pricing.map(x => x.package_price)) : 0;
+  const startingPrice = pkg.quoted_price || (pkg.pricing?.length ? Math.min(...pkg.pricing.map(x => x.package_price)) : 0);
   const primaryImage = pkg.media?.find(m => m.is_primary)?.media_url || pkg.media?.[0]?.media_url;
   const packageBookings = (bookings ?? []).filter(b => b.package_id === id);
 
@@ -133,7 +134,7 @@ export default function TourDetailPage() {
             </Box>
             <Box sx={{ minWidth: 240 }}>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button startIcon={<Edit />} variant="outlined" onClick={() => navigate(`/tours?edit=${id}`)}>Edit</Button>
+                {!pkg.is_custom && <Button startIcon={<Edit />} variant="outlined" onClick={() => navigate(`/tours?edit=${id}`)}>Edit</Button>}
                 {pkg.status === "PENDING_APPROVAL" && <Button color="success" variant="contained" onClick={() => statusMutation.mutate({ status: "APPROVED" })}>Approve</Button>}
                 {pkg.status === "APPROVED" && <Button color="success" variant="contained" onClick={() => statusMutation.mutate({ status: "ACTIVE" })}>Activate</Button>}
                 {pkg.status === "ACTIVE" && <Button color="warning" variant="outlined" onClick={() => statusMutation.mutate({ status: "SUSPENDED" })}>Suspend</Button>}

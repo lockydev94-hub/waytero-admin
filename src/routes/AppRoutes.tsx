@@ -23,6 +23,7 @@ const DriversPage              = lazy(() => import("../pages/drivers/DriversPage
 const VehiclesPage             = lazy(() => import("../pages/vehicles/VehiclesPage"));
 const HotelsPage               = lazy(() => import("../pages/hotels/HotelsPage"));
 const ToursPage                = lazy(() => import("../pages/tours/ToursPage"));
+const CustomTourPlanPage       = lazy(() => import("../pages/tours/CustomTourPlanPage"));
 const TourDetailPage           = lazy(() => import("../pages/tours/TourDetailPage"));
 const PaymentsPage             = lazy(() => import("../pages/payments/PaymentsPage"));
 const WalletsPage              = lazy(() => import("../pages/wallets/WalletsPage"));
@@ -110,6 +111,7 @@ export function AppRoutes() {
             <Route path="/vehicles"    element={<VehiclesPage />} />
             <Route path="/hotels"      element={<HotelsPage />} />
             <Route path="/tours"       element={<ToursPage />} />
+            <Route path="/tours/custom-plan" element={<CustomTourPlanPage />} />
             <Route path="/tours/:packageId" element={<TourDetailPage />} />
             <Route path="/payments"    element={<PaymentsPage />} />
             <Route path="/wallets"     element={<WalletsPage />} />

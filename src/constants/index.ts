@@ -184,6 +184,7 @@ const TITLE_BY_PATH: Array<[RegExp, string]> = [
   [/^\/cms\/landing-pages\/new$/,                         "New Landing Page"],
   [/^\/cms\/landing-pages\/[^/]+$/,                       "Landing Page Editor"],
   [/^\/cms\/pages\/[^/]+$/,                               "Page Editor"],
+  [/^\/tours\/custom-plan$/,                              "Custom Tour Plan"],
   [/^\/tours\/[^/]+$/,                                    "Tour Detail"],
   [/^\/cab-rate-card$/,                                   "Cab Rate Card"],
   [/^\/customer-care\/cab-booking\/[^/]+$/,               "Customer Cab Bookings"],

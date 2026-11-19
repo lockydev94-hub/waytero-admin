@@ -15,7 +15,7 @@ import {
   Add, Search, Refresh, Edit, Visibility, CheckCircle, Block, PauseCircle, Cancel,
   TravelExplore, ReceiptLong, PendingActions, Drafts, LocationOn, CalendarMonth,
   People, MoreVert, Star, OpenInNew, Hotel, Image as ImageIcon, HourglassEmpty,
-  TaskAlt, CancelOutlined, WarningAmber, AttachMoney,
+  TaskAlt, CancelOutlined, WarningAmber, AttachMoney, Route, Lock,
 } from "@mui/icons-material";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
   INACTIVE:         { label: "Inactive",         color: "#6B7280", bg: "#F3F4F6", icon: <PauseCircle sx={{ fontSize: 14 }} /> },
   SUSPENDED:        { label: "Suspended",        color: "#F59E0B", bg: "#FEF3C7", icon: <Block sx={{ fontSize: 14 }} /> },
   REJECTED:         { label: "Rejected",         color: "#EF4444", bg: "#FEE2E2", icon: <CancelOutlined sx={{ fontSize: 14 }} /> },
+  CUSTOM:           { label: "Custom / Private", color: "#0284C7", bg: "#E0F2FE", icon: <Lock sx={{ fontSize: 14 }} /> },
 };
 
 const BOOKING_STATUS_META: Record<string, { color: string; bg: string; label: string }> = {
@@ -53,6 +54,7 @@ const STATUS_FILTERS = [
   { value: "DRAFT",           label: "Draft" },
   { value: "REJECTED",        label: "Rejected" },
   { value: "SUSPENDED",       label: "Suspended" },
+  { value: "CUSTOM",          label: "Custom" },
 ];
 
 // ── Stat card ─────────────────────────────────────────────────
@@ -200,6 +202,7 @@ export default function ToursPage() {
         </Box>
         <Stack direction="row" spacing={1}>
           <Button startIcon={<Refresh />} onClick={() => { qc.invalidateQueries({ queryKey: ["admin-tour-packages"] }); qc.invalidateQueries({ queryKey: ["admin-tour-bookings"] }); qc.invalidateQueries({ queryKey: ["admin-tour-stats"] }); }}>Refresh</Button>
+          <Button startIcon={<Route />} variant="outlined" size="large" onClick={() => navigate("/tours/custom-plan")}>Custom plan</Button>
           <Button startIcon={<Add />} variant="contained" size="large" onClick={() => { setEditing(null); setEditorOpen(true); }}>Add package</Button>
         </Stack>
       </Stack>
@@ -334,7 +337,11 @@ export default function ToursPage() {
                           <TableCell align="right">
                             <Stack direction="row" spacing={0.5} justifyContent="flex-end">
                               <Tooltip title="View detail"><IconButton size="small" onClick={() => navigate(`/tours/${p.id}`)}><Visibility fontSize="small" /></IconButton></Tooltip>
-                              <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(p); setEditorOpen(true); }}><Edit fontSize="small" /></IconButton></Tooltip>
+                              {p.is_custom ? (
+                                <Tooltip title="Private custom plan — use the custom plan page"><span><IconButton size="small" disabled><Lock fontSize="small" /></IconButton></span></Tooltip>
+                              ) : (
+                                <Tooltip title="Edit"><IconButton size="small" onClick={() => { setEditing(p); setEditorOpen(true); }}><Edit fontSize="small" /></IconButton></Tooltip>
+                              )}
                               <IconButton size="small" onClick={(e) => setActionMenu({ anchor: e.currentTarget, pkg: p })}><MoreVert fontSize="small" /></IconButton>
                             </Stack>
                           </TableCell>
