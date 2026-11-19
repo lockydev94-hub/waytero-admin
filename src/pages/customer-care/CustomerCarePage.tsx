@@ -198,7 +198,7 @@ export default function CustomerCarePage() {
             <Box>
               <Typography variant="h5" fontWeight={800} letterSpacing={-0.5}>Customer Care</Typography>
               <Typography variant="body2" color="text.secondary">
-                Manage customer sessions, bookings & issues
+                Look up the caller, quote a service, then book or log an issue
               </Typography>
             </Box>
           </Stack>
@@ -219,7 +219,7 @@ export default function CustomerCarePage() {
                 boxShadow: `0 4px 14px ${alpha(theme.palette.primary.main, 0.3)}`,
               }}
             >
-              New Session
+              Start Call Session
             </Button>
           </Stack>
         </Stack>

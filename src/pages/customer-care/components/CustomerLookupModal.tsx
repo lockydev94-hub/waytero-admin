@@ -15,15 +15,19 @@ import {
   PhoneAndroid, PersonAdd, Close, Search, CheckCircle,
   PersonOff, DirectionsCar, HeadsetMic, ArrowForward,
   CalendarMonth, Bookmark, Hotel, TravelExplore, ArrowBack, ChevronRight,
+  Calculate,
 } from "@mui/icons-material";
 import { useForm } from "react-hook-form";
 import { customerCareService, CustomerLookup } from "../../../services/customerCare.service";
 import { format } from "date-fns";
+import {
+  CareService, CabQuotePanel, HotelQuotePanel, TourQuotePanel,
+} from "./CareSessionQuote";
 
-type Step = "lookup" | "register" | "found" | "service";
+type Step = "lookup" | "register" | "found" | "service" | "quote";
 
-// Booking service the agent picks before we route to that service's form.
-export type BookingService = "CAB" | "HOTEL" | "TOUR";
+// Booking service the agent picks before we show its live price panel.
+export type BookingService = CareService;
 
 interface Props {
   open: boolean;
@@ -68,6 +72,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [customer, setCustomer] = useState<CustomerLookup | null>(null);
+  const [service, setService] = useState<BookingService | null>(null);
   const [prefilled, setPrefilled] = useState(false);
   const { register, handleSubmit, reset, formState: { errors } } = useForm<RegisterForm>();
 
@@ -86,6 +91,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
     setStep("lookup");
     setError("");
     setCustomer(null);
+    setService(null);
     reset();
     onClose();
   }
@@ -120,6 +126,8 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
     } finally { setLoading(false); }
   }
 
+  const selectedService = SERVICES.find(svc => svc.key === service);
+
   const infoRow = (label: string, value: string | undefined | null) => value ? (
     <Box>
       <Typography variant="caption" color="text.secondary" fontWeight={600}>{label}</Typography>
@@ -128,7 +136,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
   ) : null;
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth
+    <Dialog open={open} onClose={handleClose} maxWidth={step === "quote" ? "md" : "sm"} fullWidth
       PaperProps={{ sx: { borderRadius: 4, overflow: "hidden" } }}>
 
       {/* Header */}
@@ -146,7 +154,9 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
               <Typography fontSize={12} sx={{ opacity: 0.8 }}>
                 {step === "lookup" ? "Look up customer by mobile" :
                  step === "register" ? "Register new customer" :
-                 step === "service" ? "Choose a service to book" : "Customer found"}
+                 step === "service" ? "Choose a service to price" :
+                 step === "quote" ? `Price details · ${selectedService?.label ?? "Service"}` :
+                 "Customer found"}
               </Typography>
             </Box>
           </Stack>
@@ -315,7 +325,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
             <Stack direction="row" gap={2}>
               <Button
                 variant="contained" fullWidth
-                startIcon={<DirectionsCar />}
+                startIcon={<Calculate />}
                 endIcon={<ArrowForward />}
                 onClick={() => setStep("service")}
                 sx={{
@@ -323,7 +333,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
                   background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
                 }}
               >
-                Create Booking
+                Price or Book Service
               </Button>
               <Button
                 variant="outlined" fullWidth
@@ -352,7 +362,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
             </Stack>
 
             <Typography fontWeight={700} fontSize={13} color="text.secondary" mb={1.5}>
-              SELECT SERVICE TO BOOK
+              SELECT SERVICE TO PRICE
             </Typography>
 
             <Stack gap={1.5}>
@@ -361,7 +371,7 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
                 return (
                   <Box
                     key={svc.key}
-                    onClick={enabled ? () => { onCustomerSelected(customer, "booking", svc.key); handleClose(); } : undefined}
+                    onClick={enabled ? () => { setService(svc.key); setStep("quote"); } : undefined}
                     sx={{
                       p: 2, borderRadius: 2.5, border: "1px solid",
                       borderColor: enabled ? alpha(svc.color, 0.3) : "divider",
@@ -404,6 +414,51 @@ export default function CustomerLookupModal({ open, onClose, initialMobile, onCu
             >
               Back
             </Button>
+          </Box>
+        )}
+
+        {/* STEP 4: Live price details */}
+        {step === "quote" && customer && service && (
+          <Box>
+            <Stack direction="row" alignItems="center" gap={1} mb={2.5}>
+              <IconButton
+                onClick={() => setStep("service")}
+                sx={{ border: "1px solid", borderColor: "divider" }}
+                aria-label="Back to services"
+              >
+                <ArrowBack />
+              </IconButton>
+              <Box flex={1} minWidth={0}>
+                <Typography fontWeight={800} fontSize={16} noWrap>
+                  {selectedService?.label ?? "Service"} price details
+                </Typography>
+                <Typography color="text.secondary" fontSize={12} noWrap>
+                  {customer.full_name || customer.mobile_number} · quote before booking
+                </Typography>
+              </Box>
+            </Stack>
+
+            {service === "CAB" && (
+              <CabQuotePanel
+                customerId={customer.customer_id!}
+                onBook={() => { onCustomerSelected(customer, "booking", "CAB"); handleClose(); }}
+                onIssue={() => { onCustomerSelected(customer, "issue"); handleClose(); }}
+              />
+            )}
+            {service === "HOTEL" && (
+              <HotelQuotePanel
+                customerId={customer.customer_id!}
+                onBook={() => { onCustomerSelected(customer, "booking", "HOTEL"); handleClose(); }}
+                onIssue={() => { onCustomerSelected(customer, "issue"); handleClose(); }}
+              />
+            )}
+            {service === "TOUR" && (
+              <TourQuotePanel
+                customerId={customer.customer_id!}
+                onBook={() => { onCustomerSelected(customer, "booking", "TOUR"); handleClose(); }}
+                onIssue={() => { onCustomerSelected(customer, "issue"); handleClose(); }}
+              />
+            )}
           </Box>
         )}
       </DialogContent>
