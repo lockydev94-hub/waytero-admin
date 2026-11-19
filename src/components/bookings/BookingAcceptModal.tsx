@@ -114,6 +114,9 @@ export default function BookingAcceptModal() {
   const [accepting, setAccepting] = useState<Set<number>>(new Set());
   const [acceptingAll, setAcceptingAll] = useState(false);
   const loadedOnceRef = useRef(false);
+  // Guards against out-of-order queue responses: a slower, older refresh must
+  // not overwrite a newer one and re-add a booking that was just resolved.
+  const refreshSeqRef = useRef(0);
   // Only redirect to /bookings when the ADMIN accepted the last booking.
   // If a partner resolves the queue (fixed-assignment hotel/tour), we close
   // the modal + stop the ringtone but don't yank the admin to /bookings.
@@ -128,8 +131,10 @@ export default function BookingAcceptModal() {
   }, []);
 
   const refreshQueue = useCallback(async (opts?: { openIfAny?: boolean }) => {
+    const seq = ++refreshSeqRef.current;
     try {
       const res = await bookingService.acceptQueue();
+      if (seq !== refreshSeqRef.current) return;
       const items = res?.items ?? [];
       setQueue(items);
       loadedOnceRef.current = true;
@@ -146,6 +151,30 @@ export default function BookingAcceptModal() {
   // (or the WS was down) still need to surface on login.
   useEffect(() => {
     refreshQueue({ openIfAny: true });
+  }, [refreshQueue]);
+
+  // Another admin accepted/assigned a booking, auto-assign ran, a partner
+  // responded, or a trip reached a later status. Re-pull the authoritative
+  // queue instead of guessing from the event, so a stale row cannot linger in
+  // the modal after the booking no longer needs admin acceptance.
+  useEffect(() => {
+    const reconcile = () => { void refreshQueue(); };
+    const offAdminRefresh = subscribe("BOOKING_ADMIN_REFRESH", reconcile);
+    const offUpdated = subscribe("BOOKING_UPDATED", reconcile);
+    return () => {
+      offAdminRefresh();
+      offUpdated();
+    };
+  }, [subscribe, refreshQueue]);
+
+  // Returning to the tab after a while: catch up on anything that changed
+  // while this tab was asleep.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshQueue();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refreshQueue]);
 
   // Real-time: a customer just booked on the website.
@@ -169,10 +198,13 @@ export default function BookingAcceptModal() {
           body: `${d.booking_number} — ${item.headline ?? "new booking"}`,
           tag: `accept-${item.master_booking_id}`,
         });
+        // The event may arrive after another admin has already accepted the
+        // booking. Reconcile with the server so only still-pending rows remain.
+        void refreshQueue({ openIfAny: true });
       }
     });
     return off;
-  }, [subscribe]);
+  }, [subscribe, refreshQueue]);
 
   // Real-time: a partner accepted/rejected a hotel/tour booking — drop it
   // from the admin queue so the modal doesn't keep ringing for a booking
