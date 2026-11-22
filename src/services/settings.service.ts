@@ -186,7 +186,7 @@ export interface GeocodeCityResult {
 
 // Places (migration 0070) — airports & railway stations under a city.
 // Creating one auto-provisions its PLACE_CABS landing page (unpublished).
-export type PlaceKind = "AIRPORT" | "RAILWAY_STATION";
+export type PlaceKind = "AIRPORT" | "RAILWAY_STATION" | "LANDMARK";
 
 export interface Place {
   id: number;

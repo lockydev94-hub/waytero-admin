@@ -3971,6 +3971,7 @@ function PlaceDialog({
                 >
                   <MenuItem value="AIRPORT">Airport</MenuItem>
                   <MenuItem value="RAILWAY_STATION">Railway station</MenuItem>
+                  <MenuItem value="LANDMARK">Landmark</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
