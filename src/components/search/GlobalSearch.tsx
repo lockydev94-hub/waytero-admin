@@ -116,7 +116,34 @@ export function GlobalSearch() {
         noOptionsText="No matching pages"
         sx={{
           flex: 1,
-          "& .MuiAutocomplete-inputRoot": { borderRadius: 3, pr: 7, bgcolor: theme.palette.mode === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.05)" },
+          "& .MuiAutocomplete-inputRoot": {
+            borderRadius: 2.5,
+            pr: 7,
+            bgcolor:
+              theme.palette.mode === "dark"
+                ? "rgba(255,255,255,0.06)"
+                : "rgba(15,111,255,0.05)",
+            border: `1px solid ${
+              theme.palette.mode === "dark"
+                ? "rgba(148,163,184,0.18)"
+                : "rgba(15,111,255,0.10)"
+            }`,
+            transition: "background-color 160ms ease, border-color 160ms ease",
+            "&:hover": {
+              bgcolor:
+                theme.palette.mode === "dark"
+                  ? "rgba(255,255,255,0.09)"
+                  : "rgba(15,111,255,0.07)",
+            },
+            "&.Mui-focused": {
+              border: `1px solid ${theme.palette.primary.main}`,
+              bgcolor:
+                theme.palette.mode === "dark"
+                  ? "rgba(255,255,255,0.09)"
+                  : "rgba(255,255,255,0.9)",
+            },
+          },
+          "& .MuiOutlinedInput-notchedOutline": { border: "none" },
         }}
         renderInput={(params) => (
           <TextField

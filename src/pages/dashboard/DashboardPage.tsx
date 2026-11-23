@@ -45,29 +45,75 @@ interface KpiCardProps {
 
 function KpiCard({ label, value, sub, icon, color, loading }: KpiCardProps) {
   return (
-    <Card sx={{ height: "100%" }}>
+    <Card
+      sx={{
+        height: "100%",
+        position: "relative",
+        overflow: "hidden",
+        transition: "transform 200ms ease, box-shadow 200ms ease",
+        "&::after": {
+          content: '""',
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: 3,
+          backgroundImage: `linear-gradient(90deg, ${color}, ${alpha(color, 0.15)})`,
+        },
+        "&:hover": {
+          transform: "translateY(-2px)",
+          boxShadow: "0 22px 44px -26px rgba(15,23,42,0.45)",
+        },
+      }}
+    >
       <CardContent sx={{ p: 2.5 }}>
-        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" fontWeight={600}
-              sx={{ textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 1.5 }}>
+          <Box minWidth={0}>
+            <Typography
+              sx={{
+                fontSize: 10.5,
+                fontWeight: 700,
+                letterSpacing: "0.1em",
+                textTransform: "uppercase",
+                color: "text.secondary",
+              }}
+            >
               {label}
             </Typography>
             {loading ? (
               <Skeleton variant="text" width={80} height={44} />
             ) : (
-              <Typography variant="h4" fontWeight={700} sx={{ mt: 0.5, lineHeight: 1 }}>
+              <Typography
+                sx={{
+                  mt: 1,
+                  fontSize: 28,
+                  fontWeight: 800,
+                  lineHeight: 1.05,
+                  letterSpacing: "-0.03em",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+              >
                 {value}
               </Typography>
             )}
             {sub && !loading && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+              <Typography sx={{ mt: 0.75, fontSize: 11.5, color: "text.secondary" }}>
                 {sub}
               </Typography>
             )}
           </Box>
-          <Avatar sx={{ bgcolor: alpha(color, 0.12), width: 48, height: 48 }}>
-            <Box sx={{ color }}>{icon}</Box>
+          <Avatar
+            variant="rounded"
+            sx={{
+              width: 44,
+              height: 44,
+              borderRadius: 2.5,
+              color,
+              backgroundImage: `linear-gradient(140deg, ${alpha(color, 0.2)}, ${alpha(color, 0.06)})`,
+              border: `1px solid ${alpha(color, 0.22)}`,
+            }}
+          >
+            {icon}
           </Avatar>
         </Box>
       </CardContent>

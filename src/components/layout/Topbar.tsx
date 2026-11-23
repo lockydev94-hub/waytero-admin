@@ -60,7 +60,16 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
         </IconButton>
 
         {/* Page title — longest matching nav path, or the detail-route name */}
-        <Typography variant="h6" fontWeight={600} sx={{ display: { xs: "none", md: "block" }, mr: 1, whiteSpace: "nowrap" }}>
+        <Typography
+          sx={{
+            display: { xs: "none", md: "block" },
+            mr: 1,
+            whiteSpace: "nowrap",
+            fontSize: 17,
+            fontWeight: 800,
+            letterSpacing: "-0.015em",
+          }}
+        >
           {resolveNavTitle(location.pathname)}
         </Typography>
 
@@ -88,7 +97,17 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
                 variant="outlined"
                 icon={<LockIcon />}
                 label={`locks in ${mmss(idleRemainingMs)}`}
-                sx={{ display: { xs: "none", sm: "flex" }, ml: 0.5, fontVariantNumeric: "tabular-nums" }}
+                sx={{
+                  display: { xs: "none", sm: "flex" },
+                  ml: 0.5,
+                  fontVariantNumeric: "tabular-nums",
+                  borderColor: "divider",
+                  bgcolor: (t) =>
+                    t.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.05)"
+                      : "rgba(15,111,255,0.05)",
+                  "& .MuiChip-icon": { fontSize: 15 },
+                }}
               />
             </Tooltip>
           )}
@@ -104,7 +123,18 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
 
           <Tooltip title="Account">
             <IconButton size="small" onClick={(e) => openMenu(e.currentTarget)} sx={{ ml: 0.5 }}>
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", fontSize: 13, fontWeight: 700 }}>
+              <Avatar
+                sx={{
+                  width: 32,
+                  height: 32,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: "#fff",
+                  background: "linear-gradient(140deg, #4C8DFF 0%, #1D4ED8 100%)",
+                  border: "1px solid rgba(255,255,255,0.35)",
+                  boxShadow: "0 8px 18px -10px rgba(15,111,255,0.85)",
+                }}
+              >
                 {user?.full_name?.[0] ?? user?.mobile?.[0] ?? "A"}
               </Avatar>
             </IconButton>
@@ -115,9 +145,18 @@ export function Topbar({ sidebarOpen, onToggleSidebar, onLogout }: TopbarProps) 
           anchorEl={anchorEl}
           open={Boolean(anchorEl)}
           onClose={closeMenu}
-          slotProps={{ paper: { sx: { minWidth: 240 } } }}
+          slotProps={{ paper: { sx: { minWidth: 248, mt: 1 } } }}
         >
-          <Box sx={{ px: 2, py: 1.5 }}>
+          <Box
+            sx={(t) => ({
+              px: 2,
+              py: 1.75,
+              background:
+                t.palette.mode === "dark"
+                  ? "linear-gradient(135deg, rgba(46,123,255,0.18), rgba(99,102,241,0.12))"
+                  : "linear-gradient(135deg, rgba(15,111,255,0.08), rgba(99,102,241,0.06))",
+            })}
+          >
             <Typography variant="body2" fontWeight={700} noWrap>
               {user?.full_name ?? user?.mobile ?? "Account"}
             </Typography>

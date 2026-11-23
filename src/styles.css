@@ -1,8 +1,8 @@
 :root {
   color-scheme: light;
-  --bg: #f4efe7;
-  --fg: #1d2a39;
-  --accent: #0d7c66;
+  --bg: #f5f8fd;
+  --fg: #0f172a;
+  --accent: #0f6fff;
 }
 
 * {
@@ -11,11 +11,38 @@
 
 body {
   margin: 0;
-  font-family: "Segoe UI", sans-serif;
-  background: radial-gradient(circle at top left, #fff7ed, var(--bg));
+  font-family: "Inter", "Segoe UI", sans-serif;
+  background: var(--bg);
   color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+::selection {
+  background: rgba(15, 111, 255, 0.18);
+}
+
+/* Thin, neutral scrollbars everywhere except where a component overrides them
+   (the sidebar keeps its own light-on-navy thumb). */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.28);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.45);
+  background-clip: content-box;
+}
+
+/* Legacy landing styles kept for the standalone preview pages. */
 .shell {
   min-height: 100vh;
   display: grid;
@@ -26,10 +53,11 @@ body {
 .hero {
   max-width: 42rem;
   background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(29, 42, 57, 0.08);
+  border: 1px solid rgba(15, 23, 42, 0.08);
   border-radius: 24px;
   padding: 2rem;
-  box-shadow: 0 24px 60px rgba(29, 42, 57, 0.08);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
 }
 
 .eyebrow {
@@ -38,4 +66,3 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-
