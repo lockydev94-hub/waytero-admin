@@ -174,7 +174,7 @@ function CropModal({
 
   const SPECS: Record<string, { w: number; h: number; label: string }> = {
     logo:     { w: 400, h: 120, label: "400 × 120 px" },
-    favicon:  { w: 32,  h: 32,  label: "32 × 32 px" },
+    favicon:  { w: 96,  h: 96,  label: "96 × 96 px" },
     og_image: { w: 1200, h: 630, label: "1200 × 630 px" },
   };
   const spec = SPECS[assetType] ?? { w: 400, h: 120, label: "400 × 120 px" };
@@ -524,8 +524,7 @@ function MediaUploadCard({
 }
 
 const ASSET_SPECS: Record<string, { w: number; h: number; ratio: number }> = {
-  logo:     { w: 400, h: 120, ratio: 400 / 120 },
-  favicon:  { w: 32,  h: 32,  ratio: 1 },
+  logo:     { w: 400, h: 120, ratio: 400 / 120 },  favicon:  { w: 96,  h: 96, ratio: 1 },
   og_image: { w: 1200, h: 630, ratio: 1200 / 630 },
 };
 
@@ -897,7 +896,7 @@ function PlatformTab({ enqueueSnackbar }: any) {
               assetType="favicon"
               label="Favicon"
               description="Browser tab icon — shows in bookmarks & address bar"
-              specLabel="32 × 32 px"
+              specLabel="96 × 96 px"
               currentUrl={faviconUrl}
               onSaved={url => setFaviconUrl(url)}
               enqueueSnackbar={enqueueSnackbar}
