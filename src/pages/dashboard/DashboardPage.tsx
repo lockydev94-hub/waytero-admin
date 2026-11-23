@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Box, Grid, Card, CardContent, Typography, Skeleton,
   Chip, Divider, Avatar, Stack, alpha, Table, TableBody, TableCell,
-  TableHead, TableRow, TableContainer, Alert,
+  TableHead, TableRow, TableContainer, Alert, useTheme,
 } from "@mui/material";
 import {
   ConfirmationNumber, Hotel, DirectionsCar, Handshake,
@@ -133,6 +133,8 @@ function ActivityIcon({ status }: { status: string }) {
 }
 
 export default function DashboardPage() {
+  const theme = useTheme();
+
   const { data: stats, isLoading } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: dashboardService.getStats,
@@ -300,9 +302,9 @@ export default function DashboardPage() {
                         <stop offset="95%" stopColor="#14B8A6" stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                    <XAxis dataKey="month" tick={{ fontSize: 12, fill: "#64748B" }} />
-                    <YAxis tick={{ fontSize: 12, fill: "#64748B" }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                    <XAxis dataKey="month" tick={{ fontSize: 12, fill: theme.palette.text.secondary }} />
+                    <YAxis tick={{ fontSize: 12, fill: theme.palette.text.secondary }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}K`} />
                     <Tooltip formatter={(v: number, n) =>
                       n === "revenue" ? [`₹${v.toLocaleString("en-IN")}`, "Revenue"] : [v, "Bookings"]} />
                     <Legend />
@@ -331,9 +333,9 @@ export default function DashboardPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={cityData} layout="vertical" margin={{ top: 0, right: 12, bottom: 0, left: -10 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: "#64748B" }} />
-                    <YAxis type="category" dataKey="city" tick={{ fontSize: 12, fill: "#64748B" }} width={72} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: theme.palette.text.secondary }} />
+                    <YAxis type="category" dataKey="city" tick={{ fontSize: 11, fill: theme.palette.text.secondary }} width={96} />
                     <Tooltip />
                     <Bar dataKey="bookings" fill="#0F6FFF" radius={[0, 4, 4, 0]} name="Bookings" />
                   </BarChart>
