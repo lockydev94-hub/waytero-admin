@@ -118,7 +118,8 @@ export function GlobalSearch() {
           flex: 1,
           "& .MuiAutocomplete-inputRoot": {
             borderRadius: 2.5,
-            pr: 7,
+            // Reserve room for the Ctrl-K hint only where it is shown.
+            pr: { xs: 1.5, sm: 7 },
             bgcolor:
               theme.palette.mode === "dark"
                 ? "rgba(255,255,255,0.06)"
@@ -164,6 +165,7 @@ export function GlobalSearch() {
         <IconButton
           size="small"
           sx={{
+            display: { xs: "none", sm: "inline-flex" },
             position: "absolute",
             right: 4,
             border: `1px solid ${theme.palette.divider}`,

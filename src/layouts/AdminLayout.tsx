@@ -89,6 +89,7 @@ export function AdminLayout() {
         height: "100%",
         color: "#fff",
         bgcolor: INK,
+        borderRight: "1px solid rgba(255,255,255,0.06)",
         overflow: "hidden",
       }}
     >
@@ -123,7 +124,7 @@ export function AdminLayout() {
             sx={{
               width: 38,
               height: 38,
-              borderRadius: 2.25,
+              borderRadius: "12px",
               display: "grid",
               placeItems: "center",
               background: "linear-gradient(140deg, #2E7BFF 0%, #0B4FD8 100%)",
@@ -157,11 +158,13 @@ export function AdminLayout() {
         <Box sx={{ height: "1px", bgcolor: hairline, mx: 2.25 }} />
 
         {/* Nav */}
+        <Box sx={{ position: "relative", flex: 1, minHeight: 0 }}>
         <List
           sx={{
-            flex: 1,
+            height: "100%",
             px: 1.25,
-            py: 1.25,
+            pt: 1.25,
+            pb: 3,
             overflowY: "auto",
             overflowX: "hidden",
             "&::-webkit-scrollbar": { width: 4 },
@@ -202,7 +205,7 @@ export function AdminLayout() {
                         mx: 0.5,
                         minHeight: 38,
                         px: 1.25,
-                        borderRadius: 2.5,
+                        borderRadius: "10px",
                         color: active ? "#fff" : "rgba(255,255,255,0.66)",
                         transition: "background-color 160ms ease, color 160ms ease",
                         "& .MuiListItemIcon-root": {
@@ -265,6 +268,20 @@ export function AdminLayout() {
             </Box>
           ))}
         </List>
+        {/* Fade the last visible row into the footer instead of slicing it. */}
+        <Box
+          aria-hidden
+          sx={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 30,
+            pointerEvents: "none",
+            background: `linear-gradient(to top, ${INK} 18%, rgba(7,12,22,0))`,
+          }}
+        />
+        </Box>
 
         <Box sx={{ height: "1px", bgcolor: hairline, mx: 2.25 }} />
 
@@ -273,7 +290,7 @@ export function AdminLayout() {
           <Box
             sx={{
               p: 1,
-              borderRadius: 2.5,
+              borderRadius: "12px",
               bgcolor: "rgba(255,255,255,0.05)",
               border: "1px solid rgba(255,255,255,0.08)",
               display: "flex",
@@ -293,7 +310,7 @@ export function AdminLayout() {
                 flex: 1,
                 minWidth: 0,
                 cursor: "pointer",
-                borderRadius: 2,
+                borderRadius: "8px",
                 p: 0.5,
                 "&:hover": { bgcolor: "rgba(255,255,255,0.05)" },
               }}

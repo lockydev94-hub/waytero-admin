@@ -107,7 +107,7 @@ function KpiCard({ label, value, sub, icon, color, loading }: KpiCardProps) {
             sx={{
               width: 44,
               height: 44,
-              borderRadius: 2.5,
+              borderRadius: "12px",
               color,
               backgroundImage: `linear-gradient(140deg, ${alpha(color, 0.2)}, ${alpha(color, 0.06)})`,
               border: `1px solid ${alpha(color, 0.22)}`,

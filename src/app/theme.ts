@@ -54,7 +54,9 @@ export const theme = createTheme({
     caption: { fontSize: "0.75rem" },
     button: { fontWeight: 600, letterSpacing: 0 },
   },
-  shape: { borderRadius: 12 },
+  // Kept at 10 deliberately: pages all over the portal use numeric radii
+  // (borderRadius: 2, 3…) that scale off this unit. Cards opt into 16 explicitly.
+  shape: { borderRadius: 10 },
   shadows: [
     "none",
     "0 1px 2px rgba(15,23,42,0.05)",
