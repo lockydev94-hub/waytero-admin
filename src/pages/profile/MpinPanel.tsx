@@ -23,6 +23,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { useLockStore } from "../../stores/lockStore";
 import { useCountdown } from "../../hooks/useCountdown";
 import { PinField } from "./PinField";
+import { MpinInput, MPIN_LENGTH } from "../../components/auth/MpinInput";
 import type { SessionConfig } from "../../types/auth";
 
 interface ErrorBody {
@@ -60,7 +61,8 @@ export function MpinPanel() {
 
   const [removeProof, setRemoveProof] = useState("");
 
-  const minLength = config?.mpin_min_length ?? 6;
+  // The PIN is exactly MPIN_LENGTH digits in the schema, the server and the
+  // six boxes below — `mpin_min_length` stays in the payload for older shells.
   const hasMpin = Boolean(config?.has_mpin);
   // Until the policy arrives, ask for the password: it is the proof that works
   // for the accounts this platform issues today, and a wrong guess is refused.
@@ -122,7 +124,7 @@ export function MpinPanel() {
   }
 
   const canSet =
-    newPin.length >= minLength &&
+    newPin.length === MPIN_LENGTH &&
     confirmPin === newPin &&
     (hasPassword ? password.length > 0 : otp.length > 0);
 
@@ -170,27 +172,25 @@ export function MpinPanel() {
         >
           <Grid container spacing={2}>
             <Grid item xs={12} sm={6}>
-              <PinField
-                label={`New PIN (${minLength}-12 digits)`}
+              <MpinInput
+                label="New 6-digit PIN"
                 value={newPin}
                 onChange={setNewPin}
-                minLength={minLength}
                 disabled={busy}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <PinField
+              <MpinInput
                 label="Confirm new PIN"
                 value={confirmPin}
                 onChange={setConfirmPin}
-                minLength={minLength}
-                error={confirmPin.length > 0 && confirmPin !== newPin}
+                disabled={busy}
+                error={confirmPin.length === MPIN_LENGTH && confirmPin !== newPin}
                 helperText={
-                  confirmPin.length > 0 && confirmPin !== newPin
+                  confirmPin.length === MPIN_LENGTH && confirmPin !== newPin
                     ? "The two PINs do not match."
                     : undefined
                 }
-                disabled={busy}
               />
             </Grid>
 
@@ -258,30 +258,31 @@ export function MpinPanel() {
           </Typography>
           <Grid container spacing={2}>
             <Grid item xs={12} sm={4}>
-              <PinField
+              <MpinInput
                 label="Current PIN"
                 value={currentPin}
                 onChange={setCurrentPin}
+                size="sm"
                 disabled={busy || locked}
               />
             </Grid>
             <Grid item xs={12} sm={4}>
-              <PinField
-                label={`New PIN (${minLength}-12 digits)`}
+              <MpinInput
+                label="New 6-digit PIN"
                 value={changedNew}
                 onChange={setChangedNew}
-                minLength={minLength}
+                size="sm"
                 disabled={busy || locked}
               />
             </Grid>
             <Grid item xs={12} sm={4}>
-              <PinField
+              <MpinInput
                 label="Confirm new PIN"
                 value={changedConfirm}
                 onChange={setChangedConfirm}
-                minLength={minLength}
-                error={changedConfirm.length > 0 && changedConfirm !== changedNew}
+                size="sm"
                 disabled={busy || locked}
+                error={changedConfirm.length === MPIN_LENGTH && changedConfirm !== changedNew}
               />
             </Grid>
           </Grid>
@@ -291,8 +292,8 @@ export function MpinPanel() {
             disabled={
               busy ||
               locked ||
-              !currentPin ||
-              changedNew.length < minLength ||
+              currentPin.length !== MPIN_LENGTH ||
+              changedNew.length !== MPIN_LENGTH ||
               changedNew !== changedConfirm
             }
             onClick={() =>
@@ -322,20 +323,36 @@ export function MpinPanel() {
           </Typography>
           <Grid container spacing={2} alignItems="flex-start">
             <Grid item xs={12} sm={6}>
-              <PinField
-                label={hasPassword ? "Your account password" : "Current PIN"}
-                value={removeProof}
-                onChange={setRemoveProof}
-                numeric={!hasPassword}
-                disabled={busy || locked}
-              />
+              {hasPassword ? (
+                <PinField
+                  label="Your account password"
+                  value={removeProof}
+                  onChange={setRemoveProof}
+                  numeric={false}
+                  disabled={busy || locked}
+                />
+              ) : (
+                <MpinInput
+                  label="Current PIN"
+                  value={removeProof}
+                  onChange={setRemoveProof}
+                  size="sm"
+                  disabled={busy || locked}
+                />
+              )}
             </Grid>
             <Grid item xs={12} sm={6}>
               <Button
                 variant="outlined"
                 color="error"
                 sx={{ mt: 1 }}
-                disabled={busy || locked || !removeProof}
+                disabled={
+                  busy ||
+                  locked ||
+                  (hasPassword
+                    ? removeProof.length === 0
+                    : removeProof.length !== MPIN_LENGTH)
+                }
                 onClick={() =>
                   void submit(
                     () =>
